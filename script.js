@@ -1294,6 +1294,7 @@ const WINDOW_DEFAULTS = {
   password: "", passwordWrong: false,
   imScroll: Infinity, imMaxScroll: 0,   // the chat starts scrolled to the newest message
   writingLetter: false,                 // is the "Write one" form open in Open when...?
+  showSent: false,                      // showing "My letters" (the ones you sent) instead?
   passwordLetter: null,                 // the locked letter whose password box is showing
 };
 
@@ -1540,22 +1541,32 @@ function drawOpenWhen(inside) {
   }
 
   if (state.openWhen === null) {
-    const letters = openWhenLetters();
+    // "My letters" shows the ones you've sent (so you can edit them). Otherwise, the ones to you.
+    const letters = state.showSent ? sentLetters() : openWhenLetters();
 
-    // The "Write one" button along the top.
-    drawButton(middle, inside.top + 16, 170, 24, `Write ${OTHER} one`, COLORS.acceptFill, COLORS.acceptText, () => {
+    // Two buttons along the top: write a new one, and switch between their letters and yours.
+    drawButton(middle - 82, inside.top + 16, 156, 24, "Write one", COLORS.acceptFill, COLORS.acceptText, () => {
       playSound("click");
       state.writingLetter = true;
+    });
+    drawButton(middle + 82, inside.top + 16, 156, 24, state.showSent ? `From ${OTHER}` : "My letters",
+               COLORS.cream, COLORS.text, () => {
+      playSound("click");
+      state.showSent = !state.showSent;
+      state.letterListScroll = 0;
     });
 
     // The list: an envelope (or a padlock, if it's locked) and "Open when ___" for each letter.
     // If there are more than fit, the mouse wheel scrolls the list.
     const rowHeight = 30;
     const list = { left: inside.left, top: inside.top + 32, right: inside.right, bottom: inside.bottom - 4 };
+    if (state.showSent) write("Click one to edit it", middle, list.top + 6, FONTS.tag, COLORS.text);
     if (letters.length === 0) {
-      write(`No letters from ${OTHER} yet...`, middle, list.top + 50, FONTS.body, COLORS.text);
+      write(state.showSent ? `You haven't sent ${OTHER} any yet...` : `No letters from ${OTHER} yet...`,
+            middle, list.top + 50, FONTS.body, COLORS.text);
       return;
     }
+    if (state.showSent) list.top += 12;
     const contentHeight = letters.length * rowHeight + 4;
     state.letterListMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
     state.letterListScroll = keepBetween(state.letterListScroll, 0, state.letterListMaxScroll);
@@ -1570,9 +1581,11 @@ function drawOpenWhen(inside) {
       const top = list.top + 4 + number * rowHeight - state.letterListScroll;
       if (top + rowHeight < list.top || top > list.bottom) return;
       // Locked by a date (counts down), or by a password (asks for it).
-      const locked = isLocked(letter) || needsPassword(letter);
+      // (In "My letters", your own letters are never locked for you, and clicking one edits it.)
+      const locked = !state.showSent && (isLocked(letter) || needsPassword(letter));
       const onClick = () => {
-        if (isLocked(letter)) showLockedLetter(letter);
+        if (state.showSent) editLetter(letter);
+        else if (isLocked(letter)) showLockedLetter(letter);
         else if (needsPassword(letter)) askForPassword(letter);
         else openLetter(letter);
       };
@@ -1584,7 +1597,7 @@ function drawOpenWhen(inside) {
                  state.hoverId === box.id ? COLORS.titleBar : (locked ? COLORS.iconHover : COLORS.white), COLORS.text, 1.5);
       const rowMiddle = top + (rowHeight - 4) / 2;
       if (locked) drawPixels(LOCK, box.left + 17, rowMiddle - 6, 2, COLORS.text);
-      else drawSmallEnvelope(box.left + 22, rowMiddle, remembers(`${SIDE}:${letterKey(letter)}`));
+      else drawSmallEnvelope(box.left + 22, rowMiddle, state.showSent || remembers(`${SIDE}:${letterKey(letter)}`));
       const title = `Open when ${letter.when}`;
       write(title, box.left + 44, rowMiddle + 1, fontThatFits(title, box.right - box.left - 54), COLORS.text, "left");
     });
@@ -2219,6 +2232,19 @@ async function sendLetter(when, text, password = "", unlocks = "") {
   if (password) letter.password = password;
   if (unlocks) letter.unlocks = unlocks;
   await database.collection("letters").add(letter);
+}
+
+// Saves changes to a letter you already sent. (An empty password or date removes that lock.)
+async function updateLetter(letter, when, text, password = "", unlocks = "") {
+  if (blockedInPreview()) throw new Error("preview");
+  const remove = firebase.firestore.FieldValue.delete();
+  await database.collection("letters").doc(letter.id).update({
+    when,
+    text,
+    password: password || remove,
+    unlocks: unlocks || remove,
+    editedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
   pingOther(`💌 ${ME} wrote you a new "Open when..." letter on the little computer!`);
 }
 
@@ -2861,10 +2887,13 @@ const letterPanel = makePanel("letter", `
     <p class="problem"></p>
     <div class="two">
       <button type="button" class="cancel">Cancel</button>
-      <button>Send letter</button>
+      <button class="send">Send letter</button>
     </div>
   </form>`);
 const letterForm = letterPanel.querySelector("form");
+
+// The letter being edited (or null when writing a new one).
+let editingLetter = null;
 
 // Closes the form (in the window it's in) and empties it.
 function closeLetterForm() {
@@ -2872,6 +2901,26 @@ function closeLetterForm() {
   if (win) win.writingLetter = false;
   letterForm.reset();
   letterPanel.querySelector(".problem").textContent = "";
+  letterPanel.querySelector(".send").textContent = "Send letter";
+  editingLetter = null;
+}
+
+// Clicking one of your sent letters: the same form, filled in with that letter.
+function editLetter(letter) {
+  playSound("click");
+  editingLetter = letter;
+  const fields = letterForm.elements;
+  fields.when.value = letter.when;
+  fields.text.value = letter.text;
+  fields.password.value = letter.password || "";
+  fields.unlocks.value = letter.unlocks || "";
+  letterPanel.querySelector(".send").textContent = "Save changes";
+  state.writingLetter = true;
+}
+
+// The letters you've sent on the site, oldest first.
+function sentLetters() {
+  return state.remoteLetters.filter(letter => letter.from === ME);
 }
 
 letterPanel.querySelector(".cancel").addEventListener("click", () => {
@@ -2890,12 +2939,15 @@ letterForm.addEventListener("submit", async event => {
     problem.textContent = "Fill in both parts!";
     return;
   }
-  problem.textContent = "Sending...";
+  problem.textContent = editingLetter ? "Saving..." : "Sending...";
   try {
-    await sendLetter(when, text, password, unlocks);
+    const editing = editingLetter;
+    if (editing) await updateLetter(editing, when, text, password, unlocks);
+    else await sendLetter(when, text, password, unlocks);
     playSound("win", 0.5);
     closeLetterForm();
-    showPopup("SENT", `Your letter is in ${OTHER}'s "Open when..." folder now! 💌`);
+    showPopup(editing ? "SAVED" : "SENT", editing ? "Your letter is updated! 💌"
+                                                  : `Your letter is in ${OTHER}'s "Open when..." folder now! 💌`);
   } catch (trouble) {
     console.log("Couldn't send the letter:", trouble);
     problem.textContent = "Couldn't send. Try again?";
