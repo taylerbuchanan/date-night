@@ -5955,23 +5955,29 @@ function drawQuiz(game, area) {
   const matched = quiz.questions.filter((question, number) => mine[number] === theirs[number]).length;
   write(`You matched ${matched} out of 5!`, middle, area.top + 14, FONTS.menu, COLORS.text);
   const rowHeight = Math.min(26, (area.bottom - area.top - 70) / 5);
+  // The middle of each column on the right: your pick, his pick, and if they matched.
+  const yourColumn = area.right - 110, hisColumn = area.right - 66, matchColumn = area.right - 24;
   quiz.questions.forEach((question, number) => {
     const y = area.top + 34 + number * rowHeight;
     const same = mine[number] === theirs[number];
     let text = QUIZ_QUESTIONS[question];
     ctx.font = FONTS.tag;
-    const room = area.right - area.left - 110;
+    const room = yourColumn - 30 - (area.left + 12);
     while (ctx.measureText(text).width > room && text.length > 4) text = text.slice(0, -2);
     if (text !== QUIZ_QUESTIONS[question]) text = text.trim() + "...";
     write(text, area.left + 12, y + 6, FONTS.tag, COLORS.text, "left");
     // Your pick, then his pick (as hearts in that person's color), then a check or an X.
     const picks = { [YOUR_NAME]: quiz[`answers${YOUR_NAME}`][number], [RECIPIENT_NAME]: quiz[`answers${RECIPIENT_NAME}`][number] };
-    drawPixels(HEART, area.right - 86, y + 1, 1.5, PLAYER_COLORS[picks[YOUR_NAME]]);
-    drawPixels(HEART, area.right - 66, y + 1, 1.5, PLAYER_COLORS[picks[RECIPIENT_NAME]]);
-    if (same) drawPixels(CHECK, area.right - 40, y + 2, 2, COLORS.check);
-    else write("x", area.right - 34, y + 6, FONTS.menu, COLORS.newTag);
+    // (A heart is 7 pixels wide at size 1.5, the check 6 at size 2: centered by half that.)
+    drawPixels(HEART, yourColumn - 5, y + 1, 1.5, PLAYER_COLORS[picks[YOUR_NAME]]);
+    drawPixels(HEART, hisColumn - 5, y + 1, 1.5, PLAYER_COLORS[picks[RECIPIENT_NAME]]);
+    if (same) drawPixels(CHECK, matchColumn - 6, y + 2, 2, COLORS.check);
+    else write("x", matchColumn, y + 6, FONTS.menu, COLORS.newTag);
   });
-  write(`${YOUR_NAME}'s pick, ${RECIPIENT_NAME}'s pick`, area.right - 12, area.top + 28, FONTS.tag, COLORS.text, "right");
+  // A name over each column.
+  write(YOUR_NAME, yourColumn, area.top + 26, FONTS.tag, COLORS.text);
+  write(RECIPIENT_NAME, hisColumn, area.top + 26, FONTS.tag, COLORS.text);
+  write("Match", matchColumn, area.top + 26, FONTS.tag, COLORS.text);
   drawButton(middle, area.bottom - 18, 130, 26, "New quiz", COLORS.acceptFill, COLORS.acceptText, newQuiz);
 }
 
