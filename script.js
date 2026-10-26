@@ -26,6 +26,19 @@ const GREETING_SUBTITLE = "You have one very important invitation.";
 //   label  - the words under the desktop icon (keep it short)
 //   title  - the big words at the top of the letter
 //   plan, bring, when - the details on the letter. "\n" starts a new line.
+//
+// THE DATE ITSELF (optional). If an invite has "startsAt" and "parts", then at that time
+// a "DATE TIME" pop-up shows on both computers, and "Our date" (in the Start menu) walks
+// you through it one part at a time:
+//   startsAt - when the date starts, in YOUR time (Arizona), on the invite's "date" day.
+//   parts    - each part of the date, in order:
+//     kind    - "game" (a card with how to get the game) or "movie" (the little cinema)
+//     name    - the game or movie
+//     link    - (games) the button that opens the game's page
+//     steps   - (games) what he should do, one line each
+//     poster  - (movies) the movie's cover picture, in the images folder. If the file
+//               isn't there, a cute pixel poster with the name shows instead.
+//     backups - other ideas he can pick instead with "Something else" (he can also type his own)
 const INVITES = [
   {
     id: "2026-10-26",
@@ -35,6 +48,26 @@ const INVITES = [
     plan: "Top secret",
     bring: "Your cute self, and maybe some snacks",
     when: "Monday, Oct 26\n9pm your time, 2pm my time",
+    startsAt: "14:00",
+    parts: [
+      {
+        kind: "game",
+        name: "Unsolved Case",
+        link: "https://store.steampowered.com/search/?term=Unsolved%20Case",
+        steps: [
+          "Open Steam and download Unsolved Case (the Steam button below finds it)",
+          "Hop in a call with me",
+          "Start it up and we'll crack the case together!",
+        ],
+        backups: [],
+      },
+      {
+        kind: "movie",
+        name: "MOVIE NAME HERE",
+        poster: "images/movie.png",
+        backups: [],
+      },
+    ],
   },
 ];
 
@@ -1167,6 +1200,7 @@ function taskbarPicture(win) {
   return {
     notes: drawNoteIcon, memories: drawFolderIcon, games: drawArcadeIcon, openwhen: drawOpenWhenIcon,
     secret: drawSecretIcon, plan: drawPlanIcon, im: drawIMIcon, house: drawHouseIcon,
+    datenight: drawPlanIcon,
   }[win.window] || drawNoteIcon;
 }
 
@@ -1181,7 +1215,14 @@ const START_MENU = [
   { text: "Plan a date", onClick: () => openWindow("plan") },
   { text: "IM", onClick: () => openWindow("im") },
   { text: "Our house", onClick: () => openWindow("house") },
+  { text: "Our date", onClick: () => openWindow("datenight") },
   { text: `Miss ${OTHER}`, onClick: () => showPopup("MESSAGE", `${OTHER} misses you too. Like, a lot.`) },
+  // The floating mini computer (see POP OUT near the bottom). "get text" means the words
+  // are worked out each time, so it says "Pop back in" while it's popped out.
+  // ("..." with an empty list adds nothing, for browsers that can't pop out.)
+  ...("documentPictureInPicture" in window
+    ? [{ get text() { return poppedOut ? "Pop back in" : "Pop out"; }, onClick: () => togglePopOut() }]
+    : []),
 ];
 
 // The little menu that pops up from the power button, like a real Windows computer.
@@ -1280,11 +1321,12 @@ const WINDOW_TITLES = {
   notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade",
   openwhen: "Open when...", secret: "Secret",
   plan: `Plan a date for ${OTHER}`, im: `IM - ${OTHER}`, house: "Our little house",
+  datenight: "Our date 💗",
 };
 // The shorter names on the taskbar buttons.
 const TASKBAR_NAMES = {
   notes: "love_note", memories: "Memories", games: "Arcade", openwhen: "Open when",
-  secret: "Secret", plan: "Plan a date", im: "IM", house: "House",
+  secret: "Secret", plan: "Plan a date", im: "IM", house: "House", datenight: "Our date",
 };
 
 // Every open window. The LAST one in the list is on top (the one he's using).
@@ -1495,6 +1537,7 @@ function drawWindow(time, onTop = true) {
   if (state.window === "plan") drawPlan(inside);
   if (state.window === "im") drawIM(inside);
   if (state.window === "house") drawHouse(inside, time);
+  if (state.window === "datenight") drawDateNight(inside, time);
   if (state.game) drawGameWindow(time);
 }
 
@@ -2233,6 +2276,7 @@ function startListening() {
   listenForScores(failed);
   listenForHouse(failed);
   listenForAccepts(failed);
+  listenForDateNight();
 
   database.collection("notes").orderBy("sentAt").onSnapshot(snapshot => {
     state.remoteNotes = snapshot.docs.map(doc => ({ id: doc.id, label: doc.data().label, text: doc.data().text }));
@@ -2293,12 +2337,14 @@ async function updateLetter(letter, when, text, password = "", unlocks = "") {
 // ---------- Pop-ups for new things ----------
 
 // Shows a pop-up, but if he's still on the MWAHHH start screen, waits until he clicks it.
-function notify(title, message) {
+// (yes is optional: a second button, like { text: "Update", onClick: ... }.)
+function notify(title, message, yes = null) {
+  const popup = yes ? { title, message, yes } : { title, message };
   if (state.mode === "desktop" && !state.popup) {
     playSound("incoming");
-    state.popup = { title, message };
+    state.popup = popup;
   } else {
-    state.waitingPopups = [...(state.waitingPopups || []), { title, message }];
+    state.waitingPopups = [...(state.waitingPopups || []), popup];
   }
 }
 
@@ -2743,7 +2789,9 @@ function placePanels() {
         clipPath: `inset(${trim.top}px ${trim.right}px ${trim.bottom}px ${trim.left}px)`,
       });
     } else {
-      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      // (ownerDocument = whichever window the panel is in, in case it's popped out.)
+      const focused = panel.ownerDocument.activeElement;
+      if (panel.contains(focused)) focused.blur();
       panel.style.display = "none";
     }
   });
@@ -6140,7 +6188,7 @@ function drawPopup() {
 
   // Most pop-ups just have OK. "Are you sure?" pop-ups have Cancel and a yes button.
   if (popup.yes) {
-    drawButton(CENTER_X - 50, bottom - 22, 84, 26, "Cancel", COLORS.cream, COLORS.text, closePopup, true);
+    drawButton(CENTER_X - 50, bottom - 22, 84, 26, popup.yes.noText || "Cancel", COLORS.cream, COLORS.text, closePopup, true);
     drawButton(CENTER_X + 50, bottom - 22, 84, 26, popup.yes.text, COLORS.acceptFill, COLORS.acceptText, popup.yes.onClick, true);
   } else {
     drawButton(CENTER_X, bottom - 22, 70, 26, "OK", COLORS.cream, COLORS.text, closePopup, true);
@@ -6281,7 +6329,7 @@ function draw(time) {
   } else {
     updateMouse();
   }
-  requestAnimationFrame(draw);
+  nextFrame(draw);
 }
 
 // Sparkles blink: every 0.4 seconds, each one has a 1 in 4 chance of being dim.
@@ -6647,7 +6695,7 @@ function openWindow(name) {
     window: name,
     game: name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null,
     // "Open when..." and the Arcade start full screen (he can shrink them with the button).
-    maximized: name === "openwhen" || name === "games" || name === "house",
+    maximized: name === "openwhen" || name === "games" || name === "house" || name === "datenight",
     x: 200 + step * 20,
     y: 64 + step * 10,
     minimized: false,
@@ -6911,6 +6959,544 @@ function launchConfetti() {
 // ====================================================================================
 // START
 // ====================================================================================
+
+// UPDATES: every couple of minutes, peek at the website's files. If you've uploaded a
+// new version to GitHub, a pop-up offers to update (so nobody has to refresh by hand).
+const UPDATE_CHECK_MINUTES = 2;
+const UPDATE_FILES = ["script.js", "index.html"];
+let loadedVersion = null;
+let updateOffered = false;
+
+async function currentVersion() {
+  // "no-store" means "don't use a saved copy, get it fresh from the website".
+  const texts = await Promise.all(UPDATE_FILES.map(file =>
+    fetch(`${file}?check=${Date.now()}`, { cache: "no-store" }).then(response => response.text())));
+  return texts.join("").length + ":" + texts.join("").slice(-200);
+}
+
+async function checkForUpdate() {
+  try {
+    const version = await currentVersion();
+    if (loadedVersion === null) {
+      loadedVersion = version;
+    } else if (version !== loadedVersion && !updateOffered) {
+      updateOffered = true;
+      notify("UPDATE", "There's a new version of the little computer! 💗", { text: "Update", noText: "Later", onClick: () => location.reload() });
+    }
+  } catch (problem) {
+    // No internet right now: try again next time.
+  }
+}
+checkForUpdate();
+setInterval(checkForUpdate, UPDATE_CHECK_MINUTES * 60000);
+
+
+// ====================================================================================
+// DATE NIGHT (the date itself, one part at a time)
+// ====================================================================================
+//
+// The date with "startsAt" and "parts" in the INVITES list (at the top of this file).
+// At date time, a pop-up says it's time. Then "Our date" walks you both through it:
+//   step 0           - not started yet (a countdown, and a Start button)
+//   step 1, 2, ...   - each part (the game card, then the little cinema)
+//   the last step    - "Thank you for the date"
+// The step is saved in Firebase, so when one of you clicks Next, BOTH computers move on.
+
+const DATE_NIGHT = INVITES.filter(invite => invite.parts).pop() || null;
+
+// When it starts, as a real moment in time (startsAt is in YOUR time, Arizona).
+const DATE_NIGHT_START = DATE_NIGHT ? zonedTimeToDate(DATE_NIGHT.date, DATE_NIGHT.startsAt, YOUR_TIME_ZONE).getTime() : 0;
+
+// How long after the start the "DATE TIME" pop-up can still show up (6 hours).
+const DATE_NIGHT_POPUP_HOURS = 6;
+
+// How long the cinema's curtains take to open, in seconds.
+const CURTAIN_SECONDS = 3;
+
+// The cinema's colors.
+const CINEMA = {
+  wall: "#2A1730", curtain: "#C8324A", fold: "#9E2238", gold: "#FFD98A",
+  seat: "#4A2B52", screenGlow: "#3D2547",
+};
+
+// step: which part you're on. picks: what he picked instead, like { 2: "Shrek" }.
+state.dateNight = { step: 0, picks: {} };
+state.datePicking = false;    // is the "Something else" box open?
+let curtainStart = null;      // when the curtains started opening (on this computer)
+let curtainForStep = null;    // which step those curtains were for
+
+// The movie poster picture (if the file is there).
+const posterImage = new Image();
+let hasPoster = false;
+const moviePart = DATE_NIGHT && DATE_NIGHT.parts.find(part => part.kind === "movie");
+if (moviePart && moviePart.poster) {
+  posterImage.onload = () => { hasPoster = true; };
+  posterImage.src = moviePart.poster;
+}
+
+// The game or movie for a part: what he picked instead, or what you planned.
+function partName(number) {
+  return state.dateNight.picks[number] || DATE_NIGHT.parts[number - 1].name;
+}
+
+// Saves the date's progress for both computers. (In the preview of his side, it only
+// changes this computer, so nothing gets sent as him.)
+function saveDateNight(changes) {
+  Object.assign(state.dateNight, changes);
+  if (!database || state.online !== "ok" || state.previewingHisSide) return;
+  database.collection("datenight").doc(DATE_NIGHT.id).set({
+    step: state.dateNight.step,
+    picks: state.dateNight.picks,
+    by: ME,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(problem => console.log("Couldn't save the date:", problem));
+}
+
+// Listens for the other person moving the date along.
+// (If this part of Firebase isn't set up yet, the date still works, just on each computer separately.)
+function listenForDateNight() {
+  if (!DATE_NIGHT) return;
+  database.collection("datenight").doc(DATE_NIGHT.id).onSnapshot(doc => {
+    if (!doc.exists) return;
+    const data = doc.data();
+    const before = state.dateNight.step;
+    state.dateNight = { step: data.step || 0, picks: data.picks || {} };
+    if (state.dateNight.step !== before) state.datePicking = false;
+    // They moved it along and you're not looking at it? A pop-up to come join.
+    const looking = state.windows.some(win => win.window === "datenight" && !win.minimized);
+    if (data.by === OTHER && state.dateNight.step > before && !looking) {
+      const message = before === 0 ? `${OTHER} started our date! 💗` : `${OTHER} moved on to the next part of our date!`;
+      notify("OUR DATE", message, { text: "Open", noText: "Later", onClick: openDateNightFromPopup });
+    }
+  }, () => {});
+}
+
+function openDateNightFromPopup() {
+  state.popup = null;
+  openWindow("datenight");
+}
+
+// At date time, the "DATE TIME" pop-up (once on each computer).
+function checkDateTime() {
+  if (!DATE_NIGHT) return;
+  const now = Date.now();
+  const tooLate = DATE_NIGHT_START + DATE_NIGHT_POPUP_HOURS * 3600000;
+  const seen = `${SIDE}:datestart:${DATE_NIGHT.id}`;
+  if (now < DATE_NIGHT_START || now > tooLate || remembers(seen)) return;
+  remember(seen);
+  notify("DATE TIME", "It's time for our date! 💗 Ready?", { text: "Start", noText: "Not yet", onClick: openDateNightFromPopup });
+}
+checkDateTime();
+setInterval(checkDateTime, 20000);
+
+// The buttons.
+function startDateNight() {
+  playSound("chime");
+  saveDateNight({ step: 1 });
+  if (!state.previewingHisSide) pingOther(`💗 ${ME} started our date! Open the little computer.`);
+}
+function nextDatePart() {
+  playSound("click");
+  state.datePicking = false;
+  saveDateNight({ step: state.dateNight.step + 1 });
+}
+function openSteamPage(name) {
+  playSound("click");
+  const part = DATE_NIGHT.parts[state.dateNight.step - 1];
+  // His own pick? Search Steam for it. Otherwise the link you wrote.
+  const link = state.dateNight.picks[state.dateNight.step]
+    ? `https://store.steampowered.com/search/?term=${encodeURIComponent(name)}`
+    : part.link;
+  if (link) window.open(link, "_blank");
+}
+
+// Draws the whole "Our date" window.
+function drawDateNight(area, time) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+  ctx.clip();
+  if (!DATE_NIGHT) {
+    write("No date planned right now!", (area.left + area.right) / 2, (area.top + area.bottom) / 2, FONTS.body, COLORS.text);
+  } else {
+    const step = state.dateNight.step;
+    const part = DATE_NIGHT.parts[step - 1];
+    if (step === 0) drawDateWaiting(area, time);
+    else if (!part) drawDateEnd(area, time);
+    else if (part.kind === "movie") drawCinema(area, time, step);
+    else drawGameCard(area, part, step);
+  }
+  ctx.restore();
+
+  // The "Something else" box, on top.
+  if (state.datePicking && state.dateNight.step >= 1 && DATE_NIGHT.parts[state.dateNight.step - 1]) {
+    const middle = (area.left + area.right) / 2;
+    // (Taller when there are backup buttons to show.)
+    const height = datePickPanel.querySelector(".choices").children.length ? 160 : 128;
+    requestPanel("datepick", { left: middle - 140, top: area.top + 40, right: middle + 140, bottom: area.top + 40 + height });
+  }
+}
+
+// Step 0: a countdown until the date (with a Start button once it's time, or to start early).
+function drawDateWaiting(area, time) {
+  const middle = (area.left + area.right) / 2;
+  const left = DATE_NIGHT_START - Date.now();
+  drawPixels(HEART, middle - 21, area.top + 30, 6, COLORS.heart);
+  if (left > 0) {
+    const hours = Math.floor(left / 3600000), minutes = Math.ceil((left % 3600000) / 60000);
+    const countdown = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
+    write("Our date starts in", middle, area.top + 95, FONTS.body, COLORS.text);
+    write(countdown, middle, area.top + 135, FONTS.letterTitle, COLORS.heart);
+    const clock = new Date(DATE_NIGHT_START).toLocaleTimeString("en-US", { timeZone: MY_TIME_ZONE, hour: "numeric", minute: "2-digit" });
+    write(`(${clock} your time)`, middle, area.top + 170, FONTS.note, COLORS.text);
+    drawButton(middle, area.bottom - 40, 150, 30, "Start early", COLORS.cream, COLORS.text, startDateNight);
+  } else {
+    write("It's date time!", middle, area.top + 110, FONTS.letterTitle, COLORS.text);
+    write("Grab your snacks and hop in a call 💗", middle, area.top + 150, FONTS.body, COLORS.text);
+    drawButton(middle, area.bottom - 50, 170, 36, "Start date", COLORS.acceptFill, COLORS.acceptText, startDateNight);
+  }
+}
+
+// Which part this is, like "PART 1 OF 2", across the top.
+function drawPartLabel(area, step, color) {
+  write(`PART ${step} OF ${DATE_NIGHT.parts.length}`, (area.left + area.right) / 2, area.top + 14, FONTS.small, color);
+}
+
+// A game part: the game's name, then what to do, then buttons.
+function drawGameCard(area, part, step) {
+  const middle = (area.left + area.right) / 2;
+  drawPartLabel(area, step, COLORS.text);
+  const name = partName(step);
+  const own = Boolean(state.dateNight.picks[step]);
+  const steps = own ? [`Find ${name} on Steam (the button below searches for it)`, "Hop in a call with me", "Have fun!"]
+                    : part.steps || [];
+
+  // The card.
+  const card = { left: area.left + 30, top: area.top + 28, right: area.right - 30, bottom: area.bottom - 48 };
+  steppedBox(card.left, card.top, card.right, card.bottom, 4, COLORS.white, COLORS.text, 2);
+  drawSprite(CONTROLLER, CONTROLLER_COLORS, card.left + 16, card.top + 16, 5);   // the Arcade's little controller
+  write("Game time!", card.left + 70, card.top + 18, FONTS.small, COLORS.heart, "left", "top");
+  // The name, as big as fits (from 24 pixels tall down to 12).
+  let nameSize = 24;
+  ctx.font = `bold ${nameSize}px 'Pixelify Sans'`;
+  while (nameSize > 12 && ctx.measureText(name).width > card.right - card.left - 90) {
+    nameSize--;
+    ctx.font = `bold ${nameSize}px 'Pixelify Sans'`;
+  }
+  write(name, card.left + 70, card.top + 32, ctx.font, COLORS.text, "left", "top");
+
+  // The numbered steps, wrapped to fit the card.
+  let y = card.top + 76;
+  steps.forEach((line, number) => {
+    const lines = wrapWords(line, FONTS.note, card.right - card.left - 70);
+    write(`${number + 1}.`, card.left + 22, y, FONTS.note, COLORS.heart, "left", "top");
+    lines.forEach(text => {
+      write(text, card.left + 42, y, FONTS.note, COLORS.text, "left", "top");
+      y += 18;
+    });
+    y += 6;
+  });
+
+  // The buttons along the bottom.
+  const buttonY = area.bottom - 24;
+  drawButton(middle - 160, buttonY, 120, 28, "Steam", COLORS.cream, COLORS.text, () => openSteamPage(name));
+  drawButton(middle, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+  drawButton(middle + 160, buttonY, 130, 28, "Next part", COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+}
+
+// A movie part: the little cinema, with curtains that slide open to show the poster.
+function drawCinema(area, time, step) {
+  const middle = (area.left + area.right) / 2;
+  const now = performance.now();
+
+  // Start the curtains the first time this step shows up on this computer.
+  if (curtainForStep !== step) {
+    curtainForStep = step;
+    curtainStart = now + 800;      // a little pause first, for drama
+    setTimeout(() => playSound("chime"), 800);
+  }
+  const opened = keepBetween((now - curtainStart) / (CURTAIN_SECONDS * 1000), 0, 1);
+  const eased = 1 - Math.pow(1 - opened, 3);    // starts fast, slows down at the end
+
+  // The dark theater.
+  ctx.fillStyle = CINEMA.wall;
+  ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+  drawPartLabel(area, step, CINEMA.gold);
+
+  // The marquee sign, with blinking light bulbs around it.
+  const sign = { left: middle - 120, top: area.top + 32, right: middle + 120, bottom: area.top + 64 };
+  steppedBox(sign.left, sign.top, sign.right, sign.bottom, 3, COLORS.cream, CINEMA.gold, 3);
+  for (let x = sign.left + 8; x < sign.right - 4; x += 12) {
+    const on = Math.floor(time / 400 + x / 12) % 2 === 0;
+    ctx.fillStyle = on ? CINEMA.gold : "#8A6A3A";
+    ctx.fillRect(x, sign.top - 5, 3, 3);
+    ctx.fillRect(x, sign.bottom + 2, 3, 3);
+  }
+  write("NOW SHOWING", middle, sign.top + 9, FONTS.tag, COLORS.heart);
+  const title = opened >= 1 ? partName(step) : "? ? ?";
+  write(title, middle, sign.top + 22, fontThatFits(title, sign.right - sign.left - 16), COLORS.text);
+
+  // The movie screen, with the poster on it.
+  const stage = { left: middle - 110, top: area.top + 80, right: middle + 110, bottom: area.top + 200 };
+  ctx.fillStyle = CINEMA.screenGlow;
+  ctx.fillRect(stage.left, stage.top, stage.right - stage.left, stage.bottom - stage.top);
+  const posterHeight = stage.bottom - stage.top - 12;
+  const posterWidth = Math.round(posterHeight * 2 / 3);     // posters are 2 wide for every 3 tall
+  const poster = { left: middle - posterWidth / 2, top: stage.top + 6, right: middle + posterWidth / 2, bottom: stage.bottom - 6 };
+  drawPoster(poster, partName(step), step);
+
+  // The curtains: two red sides that slide apart (they bunch up a little at the edges).
+  const half = (stage.right - stage.left) / 2;
+  const curtainWidth = half * (1 - eased * 0.85);
+  drawCurtain(stage.left, stage.top, curtainWidth, stage.bottom - stage.top);
+  drawCurtain(stage.right - curtainWidth, stage.top, curtainWidth, stage.bottom - stage.top);
+  // The scalloped valance along the top.
+  ctx.fillStyle = CINEMA.curtain;
+  ctx.fillRect(stage.left - 8, stage.top - 6, stage.right - stage.left + 16, 10);
+  for (let x = stage.left - 8; x + 16 <= stage.right + 8; x += 16) {
+    ctx.beginPath();
+    ctx.arc(x + 8, stage.top + 4, 8, 0, Math.PI);
+    ctx.fill();
+  }
+  ctx.fillStyle = CINEMA.gold;
+  ctx.fillRect(stage.left - 8, stage.top - 6, stage.right - stage.left + 16, 2);
+
+  // A row of seats, with the two of you in the middle (and a little heart above).
+  // (The heads go first, so the seat backs cover their bottoms, like they're sitting in them.)
+  const seatTop = stage.bottom + 20;
+  ctx.fillStyle = "#120A15";
+  [middle - 17, middle + 17].forEach(x => {
+    ctx.beginPath();
+    ctx.arc(x, seatTop - 3, 8, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  for (let x = middle + 3 - 34 * 8; x < area.right; x += 34) {
+    steppedBox(x, seatTop, x + 28, seatTop + 18, 4, CINEMA.seat, CINEMA.seat, 1);
+  }
+  // A little heart floating between your two heads.
+  if (opened >= 1) drawPixels(HEART, middle - 7, seatTop - 18 - Math.round(Math.sin(time / 300) * 2), 2, COLORS.heart);
+
+  // The buttons, once the curtains are open.
+  if (opened >= 1) {
+    const buttonY = area.bottom - 20;
+    drawButton(middle - 95, buttonY, 170, 26, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+    drawButton(middle + 95, buttonY, 170, 26, "The end 💗", COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  }
+}
+
+// One side of the curtains, with darker folds.
+function drawCurtain(left, top, width, height) {
+  ctx.fillStyle = CINEMA.curtain;
+  ctx.fillRect(left, top, width, height);
+  ctx.fillStyle = CINEMA.fold;
+  for (let x = left + 6; x < left + width - 2; x += 10) ctx.fillRect(Math.round(x), top, 3, height);
+}
+
+// The movie's poster: the real picture if you added it (and he didn't pick something
+// else), or a cute pixel poster with the name on it.
+function drawPoster(box, name, step) {
+  const width = box.right - box.left, height = box.bottom - box.top;
+  if (hasPoster && !state.dateNight.picks[step]) {
+    ctx.drawImage(posterImage, box.left, box.top, width, height);
+  } else {
+    ctx.fillStyle = COLORS.titleBar;
+    ctx.fillRect(box.left, box.top, width, height);
+    drawPixels(HEART, box.left + width / 2 - 14, box.top + 16, 4, COLORS.heart);
+    const lines = wrapWords(name, FONTS.menu, width - 12);
+    lines.forEach((line, i) => write(line, box.left + width / 2, box.top + 64 + i * 17, FONTS.menu, COLORS.text));
+  }
+  ctx.strokeStyle = CINEMA.gold;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(box.left, box.top, width, height);
+}
+
+// The very end: thank you, with hearts floating up.
+function drawDateEnd(area, time) {
+  const middle = (area.left + area.right) / 2;
+  for (let i = 0; i < 14; i++) {
+    const x = area.left + ((i * 73) % (area.right - area.left - 20)) + 6;
+    const y = area.bottom - ((time / 20 + i * 41) % (area.bottom - area.top + 30));
+    drawPixels(HEART, Math.round(x), Math.round(y), 2, CONFETTI_COLORS[i % CONFETTI_COLORS.length]);
+  }
+  write("Thank you for the date", middle, area.top + 100, FONTS.letterTitle, COLORS.text);
+  write(`I love you, ${OTHER} 💗`, middle, area.top + 145, FONTS.body, COLORS.heart);
+  drawButton(middle, area.bottom - 40, 190, 32, "Back to desktop", COLORS.cream, COLORS.text, closeWindow);
+}
+
+// The "Something else" box: your backup ideas as buttons, or type your own.
+const datePickPanel = makePanel("datepick", `
+  <form class="reschedule">
+    <p class="big">Pick something else</p>
+    <div class="choices"></div>
+    <label>Or type your own <input name="pick" maxlength="40" autocomplete="off" required></label>
+    <p class="problem"></p>
+    <div class="two">
+      <button type="button" class="cancel">Cancel</button>
+      <button>Pick</button>
+    </div>
+  </form>`);
+const datePickForm = datePickPanel.querySelector("form");
+
+function openDatePicker() {
+  playSound("click");
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  // The choices: what you planned (if he picked something else) and your backups.
+  const choices = [part.name, ...(part.backups || [])].filter(choice => choice !== partName(step));
+  datePickPanel.querySelector(".choices").innerHTML = choices.map(choice =>
+    `<button type="button" class="cancel" data-pick="${escapeHTML(choice)}">${escapeHTML(choice)}</button>`).join("");
+  datePickForm.elements.pick.value = "";
+  datePickPanel.querySelector(".problem").textContent = "";
+  state.datePicking = true;
+}
+
+// Clicking a backup fills in the box.
+datePickPanel.querySelector(".choices").addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  playSound("click");
+  datePickForm.elements.pick.value = button.dataset.pick;
+});
+
+datePickPanel.querySelector(".cancel:not([data-pick])").addEventListener("click", () => {
+  playSound("click");
+  state.datePicking = false;
+});
+
+datePickForm.addEventListener("submit", event => {
+  event.preventDefault();
+  const pick = datePickForm.elements.pick.value.trim();
+  if (!pick) return;
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  const picks = { ...state.dateNight.picks };
+  // Picking what you planned just goes back to it.
+  if (pick === part.name) delete picks[step];
+  else picks[step] = pick;
+  state.datePicking = false;
+  saveDateNight({ picks });
+  // The cinema's curtains open again for the new movie.
+  curtainForStep = null;
+  playSound("coin");
+  if (!state.previewingHisSide) pingOther(`💗 ${ME} picked something else for our date: ${pick}`);
+});
+
+
+// ====================================================================================
+// POP OUT (a tiny floating computer, like Bongo Cat)
+// ====================================================================================
+//
+// "Pop out" in the Start menu moves the little computer into its own tiny window that
+// floats on top of everything else on the screen. It zooms in on just the computer's
+// screen (no desk), so the words stay big enough to read.
+//
+// This uses a browser feature called "Document Picture-in-Picture". Only Chrome, Edge,
+// and Brave on a computer have it, so on other browsers the menu item doesn't show up.
+
+// How big the floating window starts (he can drag its corner to make it bigger or smaller).
+const POP_OUT_SIZE = { width: 520, height: 345 };
+
+// How much of the computer's frame to show around the screen, in drawing pixels.
+const POP_OUT_FRAME = 10;
+
+let poppedOut = null;   // the floating window, while the computer is popped out
+
+// The message left on the big page while the computer is in its floating window.
+const poppedOutNote = document.createElement("div");
+poppedOutNote.className = "popped-note";
+poppedOutNote.innerHTML = `<p>The little computer popped out! 💗</p><button>Pop back in</button>`;
+poppedOutNote.querySelector("button").addEventListener("click", popBackIn);
+
+// "Pop out" / "Pop back in" in the Start menu.
+function togglePopOut() {
+  playSound("click");
+  state.startMenu = false;
+  if (poppedOut) popBackIn();
+  else popOut();
+}
+
+async function popOut() {
+  try {
+    poppedOut = await documentPictureInPicture.requestWindow(POP_OUT_SIZE);
+  } catch (problem) {
+    poppedOut = null;
+    return;
+  }
+  const floating = poppedOut.document;
+  floating.title = "MWAHHH";
+
+  // Copy the page's styles (fonts, text boxes, buttons) into the floating window.
+  document.querySelectorAll("style").forEach(style => floating.head.appendChild(style.cloneNode(true)));
+  // The pixel font has to be loaded in there too, or the drawing's words go plain.
+  document.fonts.forEach(font => { try { floating.fonts.add(font); } catch (problem) {} });
+  floating.body.classList.add("floating");
+
+  // Move the real drawing (and the text boxes on top of it) into the floating window.
+  // They're the same ones, so everything keeps working: clicks, games, IMs, all of it.
+  floating.body.append(canvas, ui);
+  document.body.prepend(poppedOutNote);
+  fitPoppedOut();
+
+  // Keep it zoomed right when he resizes the floating window.
+  poppedOut.addEventListener("resize", fitPoppedOut);
+
+  // Keys pressed in the floating window still work for games and the secret password.
+  // (Not while typing in a text box: those keys go to the box, like normal.)
+  poppedOut.addEventListener("keydown", event => {
+    unlockSound();
+    if (isTypingInForm(event)) return;
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: event.key, code: event.code, repeat: event.repeat }));
+    if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
+  });
+  poppedOut.addEventListener("pointerdown", unlockSound);
+
+  // When the floating window closes (his X, or "back to tab"), put everything back.
+  poppedOut.addEventListener("pagehide", putComputerBack);
+}
+
+// Closing the floating window puts the computer back (see putComputerBack).
+function popBackIn() {
+  if (poppedOut) poppedOut.close();
+}
+
+function putComputerBack() {
+  poppedOut = null;
+  poppedOutNote.remove();
+  document.body.prepend(canvas, ui);
+  // Undo the zoom from fitPoppedOut, so the normal page sizes come back.
+  ["position", "left", "top", "width", "height", "maskImage", "webkitMaskImage"].forEach(key => { canvas.style[key] = ""; });
+  extendDesk();
+}
+
+// Zooms the drawing so just the computer's screen (plus a little of its frame) fills
+// the floating window. The rest of the picture (the desk, the wall) hangs off the
+// edges where you can't see it.
+function fitPoppedOut() {
+  if (!poppedOut) return;
+  const area = {
+    left: SCREEN.left - POP_OUT_FRAME, top: SCREEN.top - POP_OUT_FRAME,
+    width: SCREEN.right - SCREEN.left + POP_OUT_FRAME * 2,
+    height: SCREEN.bottom - SCREEN.top + POP_OUT_FRAME * 2,
+  };
+  // As big as fits, without cutting off any of the screen.
+  const zoom = Math.min(poppedOut.innerWidth / area.width, poppedOut.innerHeight / area.height);
+  // Center the screen in the window.
+  const left = (poppedOut.innerWidth - area.width * zoom) / 2 - area.left * zoom;
+  const top = (poppedOut.innerHeight - area.height * zoom) / 2 - area.top * zoom;
+  Object.assign(canvas.style, {
+    position: "absolute",
+    left: `${left}px`, top: `${top}px`,
+    width: `${WIDTH * zoom}px`, height: `${HEIGHT * zoom}px`,
+    // No faded edges in here (they'd fade the screen itself).
+    maskImage: "none", webkitMaskImage: "none",
+  });
+}
+
+// The next frame of the drawing. While popped out, the floating window does the timing,
+// because the big page might be minimized (and minimized pages stop drawing).
+function nextFrame(callback) {
+  (poppedOut || window).requestAnimationFrame(() => callback(performance.now()));
+}
 
 // Wait for the picture and the font to load, then start drawing.
 Promise.all([

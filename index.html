@@ -10,6 +10,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>MWAHHH</title>
   <link rel="icon" href="heart.svg">
+  <!-- These let the site be installed as its own little app. Your side (?inbox) gets its
+       own app, which always opens to your side. -->
+  <link rel="apple-touch-icon" href="images/app-icon-192.png">
+  <meta name="theme-color" content="#F8BFCB">
+  <script>
+    const appManifest = document.createElement("link");
+    appManifest.rel = "manifest";
+    appManifest.href = location.search.includes("inbox") ? "manifest-tayler.json" : "manifest.json";
+    document.head.appendChild(appManifest);
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  </script>
   <style>
     /* Our pixel font, loaded from the fonts folder. */
     @font-face {
@@ -148,6 +159,32 @@
     .colors label { display: flex; align-items: center; gap: 6px; font-weight: normal; }
     .colors input[type="color"] { width: 34px; height: 22px; padding: 1px; flex: none; }
     .big { font-size: 18px; font-weight: bold; margin: 4px 0; text-align: center; }
+
+    /* The backup ideas in "Pick something else" (on the date). */
+    .choices { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .choices:empty { display: none; }
+
+    /* The floating "Pop out" window: just the computer, cut off at the window's edges. */
+    body.floating { overflow: hidden; background: #45284A; }
+
+    /* The message on the big page while the computer is popped out. */
+    .popped-note {
+      font-family: "Pixelify Sans", sans-serif;
+      color: #45284A;
+      font-size: 22px;
+      text-align: center;
+    }
+    .popped-note button {
+      font: inherit;
+      font-size: 16px;
+      font-weight: bold;
+      color: #FFFFFF;
+      background: #C98298;
+      border: 2px solid #45284A;
+      padding: 6px 16px;
+      cursor: pointer;
+    }
+    .popped-note button:hover { background: #F07A9C; }
 
     /* The Suggest a new time box, on top of the letter. */
     .reschedule {

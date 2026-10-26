@@ -1,0 +1,15 @@
+{
+  "name": "MWAHHH (mine)",
+  "short_name": "MWAHHH",
+  "description": "Our little computer (Tayler's side)",
+  "id": "./?inbox",
+  "start_url": "./?inbox",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#CBBED8",
+  "theme_color": "#F8BFCB",
+  "icons": [
+    { "src": "images/app-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "images/app-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
