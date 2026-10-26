@@ -3630,7 +3630,8 @@ function drawGamesFolder(area) {
     steppedBox(box.left, box.top, box.right, box.bottom, 4,
                state.hoverId === box.id ? COLORS.titleBar : COLORS.white, COLORS.text, 2);
     game.picture(tileMiddle, top + 26);
-    write(game.label, tileMiddle, top + 52, FONTS.menu, COLORS.text);
+    // (Long names like "Tic-tac-toe" use slightly smaller letters, so they fit inside the tile.)
+    write(game.label, tileMiddle, top + 52, fontThatFits(game.label, TILE_SIZE - 10), COLORS.text);
 
     // The best score, small, along the bottom of the tile.
     const best = loadNumber(`best:${key}`);
