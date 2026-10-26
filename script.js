@@ -3805,10 +3805,22 @@ function cutOutFrames(sheet) {
       if (fx < 0 || fy < 0 || fx >= frame.width || fy >= frame.height) return;
       const to = (fy * frame.width + fx) * 4;
       for (let k = 0; k < 4; k++) frame.pixels.data[to + k] = pixels.data[spot * 4 + k];
+      // Keep track of where the body is (for lining the frames up, below).
+      frame.sumX = (frame.sumX || 0) + fx;
+      frame.count = (frame.count || 0) + 1;
+      frame.feet = Math.max(frame.feet || 0, fy);
     });
   }
 
-  frames.flat().forEach(frame => { frame.getContext("2d").putImageData(frame.pixels, 0, 0); frame.pixels = null; });
+  // The pictures don't all sit in the same spot in their boxes, so flipping between
+  // frames made them hop around. Each frame remembers the middle of its body (from side
+  // to side) and where its feet are, and drawFrame lines those up instead.
+  frames.flat().forEach(frame => {
+    frame.getContext("2d").putImageData(frame.pixels, 0, 0);
+    frame.pixels = null;
+    frame.middle = frame.count ? frame.sumX / frame.count : frame.width / 2;
+    frame.feet = frame.count ? frame.feet + 1 : frame.height - FRAME_PAD;
+  });
   return frames;
 }
 
@@ -3826,12 +3838,20 @@ function drawFrame(name, row, column, x, bottom, height, show = 1) {
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   if (sheet.frames) {
-    // The cut-out frame (with its padding around it). For sitting, only the top part shows.
+    // The cut-out frame (with its padding around it), with the middle of the body on x.
+    // Standing up, the feet go on "bottom". Sitting, only the top part shows (cut off at
+    // "bottom").
     const frame = sheet.frames[row][column];
-    const shownHeight = show >= 1 ? frame.height : FRAME_PAD + frameHeight * show;
-    ctx.drawImage(frame, 0, 0, frame.width, shownHeight,
-                  x - width / 2 - FRAME_PAD * scale, bottom - height * show - FRAME_PAD * scale,
-                  frame.width * scale, shownHeight * scale);
+    // Whole pixels only (the drawing is 2 real pixels per pixel), so they don't shimmer.
+    const left = Math.round((x - frame.middle * scale) * 2) / 2;
+    if (show >= 1) {
+      const top = Math.round((bottom - frame.feet * scale) * 2) / 2;
+      ctx.drawImage(frame, left, top, frame.width * scale, frame.height * scale);
+    } else {
+      const shownHeight = FRAME_PAD + frameHeight * show;
+      ctx.drawImage(frame, 0, 0, frame.width, shownHeight,
+                    left, bottom - height * show - FRAME_PAD * scale, frame.width * scale, shownHeight * scale);
+    }
   } else {
     ctx.drawImage(sheet.picture, column * frameWidth, row * frameHeight, frameWidth, frameHeight * show,
                   x - width / 2, bottom - height * show, width, height * show);
@@ -4696,7 +4716,9 @@ function stepBreakout(game, area, seconds) {
 //
 // - Drag furniture to move it. Click it (without dragging) to flip it around.
 // - Drag it onto the shop on the right to put it away in "Mine".
-// - Wallpaper and floors are in the shop too.
+// - Drag it onto an arrow to move it into the next room.
+// - Wallpaper and floors are in the shop too (each room has its own).
+// - The arrows on the sides of the room go to the other rooms.
 
 // How many coins the house starts with, so you can buy something right away.
 const STARTING_COINS = 100;
@@ -4706,6 +4728,47 @@ const HOUSE_WALL = 0.4;        // how much of the room's height is wall (the res
 const HOUSE_SIDEBAR = 118;     // how wide the shop is
 // How big the furniture pictures are drawn. Bigger number = bigger furniture.
 const HOUSE_ART_SIZE = 1;
+
+// The rooms, in order from left to right (like they're next to each other). The arrows
+// go between them, and you two and the cats wander from one room into the next.
+// TO ADD A ROOM: add a line with a new id (one word, never change it later) and a name.
+const HOUSE_ROOMS = [
+  { id: "living", name: "Living room" },
+  { id: "kitchen", name: "Kitchen" },
+  { id: "bedroom", name: "Bedroom" },
+  { id: "bathroom", name: "Bathroom" },
+  { id: "game", name: "Game room" },
+  { id: "laundry", name: "Laundry" },
+  { id: "patio", name: "Patio" },
+];
+state.houseRoom = 0;    // which room you're looking at (0 = the first one)
+state.shopPage = 0;     // which page of the shop is showing (see SHOP_PAGES)
+state.houseShopHidden = false;   // is the shop tucked away (to see the whole room)?
+
+// The room you're looking at.
+function currentRoomId() {
+  return HOUSE_ROOMS[state.houseRoom].id;
+}
+
+// Which room a piece of furniture is in. (Things from before there were rooms are in the
+// first room.)
+function itemRoom(item) {
+  return item.room || HOUSE_ROOMS[0].id;
+}
+
+// Each room's wallpaper and floor. They're saved as a list, like
+// { living: "pink", bedroom: "blue" }. (A house from before rooms has just one, like
+// "pink", for every room.)
+function roomLook(saved, room, fallback) {
+  if (typeof saved === "string") return saved;
+  return (saved && saved[room]) || fallback;
+}
+// The saved list, with this room changed to "key".
+function changeRoomLook(saved, room, key) {
+  const looks = typeof saved === "string" ? Object.fromEntries(HOUSE_ROOMS.map(other => [other.id, saved])) : { ...(saved || {}) };
+  looks[room] = key;
+  return looks;
+}
 
 // The colors for the little house icon (each letter is one color).
 const FURNITURE_COLORS = {
@@ -4717,24 +4780,141 @@ const FURNITURE_COLORS = {
 // Every kind of furniture. Each one's picture is images/furniture/<its name>.png.
 //   name   - what the shop calls it
 //   price  - how many coins it costs
+//   shop   - which shop page it's on (a room's id from HOUSE_ROOMS, or "cats")
 //   size   - how big it's drawn (1 = normal, 0.8 = a bit smaller)
+//   width  - OR: how wide it's drawn (a person is 118 tall, a double bed is about 140 wide)
 //   wall   - it hangs on the wall instead of sitting on the floor
 //   rug    - it lies flat on the floor (everything walks on top of it)
 // TO ADD MORE: put the picture in images/furniture, then add a line here with the same name.
 const FURNITURE = {
-  bed: { name: "Bed", price: 80, size: 1 },
-  couch: { name: "Couch", price: 70, size: 1 },
-  desk: { name: "Computer desk", price: 70, size: 1 },
-  tv: { name: "TV", price: 90, size: 0.9 },
-  bookshelf: { name: "Bookshelf", price: 60, size: 1 },
-  table: { name: "Coffee table", price: 40, size: 0.8 },
-  lamp: { name: "Lamp", price: 25, size: 0.85 },
-  plant: { name: "Plant", price: 20, size: 0.75 },
-  rug: { name: "Rug", price: 35, size: 1.1, rug: true },
-  window: { name: "Window", price: 50, size: 0.85, wall: true },
-  shelf: { name: "Wall shelf", price: 30, size: 0.75, wall: true },
-  poster: { name: "Heart picture", price: 15, size: 0.55, wall: true },
+  // The first furniture.
+  bed: { name: "Bed", price: 80, shop: "bedroom", size: 1 },
+  couch: { name: "Couch", price: 70, shop: "living", size: 1 },
+  desk: { name: "Computer desk", price: 70, shop: "game", size: 1 },
+  tv: { name: "TV", price: 90, shop: "living", size: 0.9 },
+  bookshelf: { name: "Bookshelf", price: 60, shop: "living", size: 1 },
+  table: { name: "Coffee table", price: 40, shop: "living", size: 0.8 },
+  lamp: { name: "Lamp", price: 25, shop: "living", size: 0.85 },
+  plant: { name: "Plant", price: 20, shop: "living", size: 0.75 },
+  rug: { name: "Rug", price: 35, shop: "living", size: 1.1, rug: true },
+  window: { name: "Window", price: 50, shop: "living", size: 0.85, wall: true },
+  shelf: { name: "Wall shelf", price: 30, shop: "living", size: 0.75, wall: true },
+  poster: { name: "Heart picture", price: 15, shop: "living", size: 0.55, wall: true },
+
+  // Living room.
+  armchair: { name: "Pink armchair", price: 45, shop: "living", width: 80 },
+  tvstand: { name: "TV console", price: 50, shop: "living", width: 120 },
+  sidetable: { name: "Side table + lamp", price: 30, shop: "living", width: 45 },
+  sideboard: { name: "Sideboard", price: 55, shop: "living", width: 130 },
+  ottoman: { name: "Blue ottoman", price: 25, shop: "living", width: 65 },
+  recordcabinet: { name: "Record cabinet", price: 45, shop: "living", width: 70 },
+  displaycabinet: { name: "Display cabinet", price: 60, shop: "living", width: 80 },
+  ovalrug: { name: "Oval rug", price: 35, shop: "living", width: 150, rug: true },
+  teacart: { name: "Tea cart", price: 35, shop: "living", width: 65 },
+  darksofa: { name: "Dark sofa", price: 70, shop: "living", width: 140 },
+  darktable: { name: "Dark coffee table", price: 40, shop: "living", width: 85 },
+  starrug: { name: "Moon rug", price: 40, shop: "living", width: 140, rug: true },
+  darkrecord: { name: "Record player", price: 55, shop: "living", width: 90 },
+  darkottoman: { name: "Dark ottoman", price: 30, shop: "living", width: 75 },
+  darkarmchair: { name: "Dark armchair", price: 45, shop: "living", width: 80 },
+  moonshelf: { name: "Moon shelf", price: 35, shop: "living", width: 60, wall: true },
+
+  // Kitchen.
+  fridge: { name: "Fridge", price: 70, shop: "kitchen", width: 60 },
+  stove: { name: "Stove", price: 60, shop: "kitchen", width: 70 },
+  sink: { name: "Kitchen sink", price: 50, shop: "kitchen", width: 70 },
+  counter: { name: "Counter", price: 40, shop: "kitchen", width: 72 },
+  microwave: { name: "Microwave", price: 40, shop: "kitchen", width: 70 },
+  island: { name: "Kitchen island", price: 50, shop: "kitchen", width: 80 },
+  diningtable: { name: "Table for two", price: 55, shop: "kitchen", width: 100 },
+  pinkchair: { name: "Pink chair", price: 20, shop: "kitchen", width: 40 },
+  bluechair: { name: "Blue chair", price: 20, shop: "kitchen", width: 40 },
+  dishrack: { name: "Dish rack", price: 15, shop: "kitchen", width: 45 },
+  coffeemaker: { name: "Coffee machine", price: 20, shop: "kitchen", width: 30 },
+  wallcupboard: { name: "Wall cupboard", price: 40, shop: "kitchen", width: 70, wall: true },
+
+  // Bedroom.
+  creambed: { name: "Cream bed", price: 80, shop: "bedroom", width: 140 },
+  darkbed: { name: "Dark bed", price: 80, shop: "bedroom", width: 140 },
+  nightstand: { name: "Nightstand", price: 30, shop: "bedroom", width: 45 },
+  darknightstand: { name: "Mushroom nightstand", price: 35, shop: "bedroom", width: 45 },
+  wardrobe: { name: "Wardrobe", price: 60, shop: "bedroom", width: 95 },
+  dresser: { name: "Dresser", price: 50, shop: "bedroom", width: 95 },
+  darkdresser: { name: "Dark dresser", price: 50, shop: "bedroom", width: 85 },
+  vanity: { name: "Vanity", price: 55, shop: "bedroom", width: 85 },
+  bench: { name: "Bed bench", price: 35, shop: "bedroom", width: 85 },
+  floormirror: { name: "Pink mirror", price: 35, shop: "bedroom", width: 50 },
+  archmirror: { name: "Arched mirror", price: 35, shop: "bedroom", width: 50 },
+  blanketladder: { name: "Blanket ladder", price: 25, shop: "bedroom", width: 45 },
+  archshelf: { name: "Arch shelf", price: 30, shop: "bedroom", width: 60, wall: true },
+
+  // Bathroom.
+  bathtub: { name: "Bathtub", price: 70, shop: "bathroom", width: 130 },
+  bathsink: { name: "Bathroom sink", price: 45, shop: "bathroom", width: 60 },
+  toilet: { name: "Toilet", price: 30, shop: "bathroom", width: 40 },
+  shower: { name: "Shower", price: 70, shop: "bathroom", width: 75 },
+  linencabinet: { name: "Towel cabinet", price: 40, shop: "bathroom", width: 50 },
+  towelrack: { name: "Towel rack", price: 25, shop: "bathroom", width: 60 },
+  hamper: { name: "Hamper", price: 20, shop: "bathroom", width: 45 },
+  bathmat: { name: "Bath mat", price: 20, shop: "bathroom", width: 85, rug: true },
+  wallmirror: { name: "Wall mirror", price: 30, shop: "bathroom", width: 50, wall: true },
+
+  // Game room.
+  gamingdesk: { name: "Gaming desk for two", price: 90, shop: "game", width: 150 },
+  lavenderchair: { name: "Purple gaming chair", price: 45, shop: "game", width: 55 },
+  pinkgamingchair: { name: "Pink gaming chair", price: 45, shop: "game", width: 55 },
+  gamebookcase: { name: "Game bookcase", price: 60, shop: "game", width: 85 },
+  walnutcabinet: { name: "Walnut cabinet", price: 45, shop: "game", width: 85 },
+  drawingdesk: { name: "Drawing desk", price: 55, shop: "game", width: 110 },
+  pctower: { name: "Gaming PC", price: 60, shop: "game", width: 40 },
+  mediarack: { name: "Speakers + games", price: 50, shop: "game", width: 100 },
+  pegboard: { name: "Pegboard", price: 30, shop: "game", width: 80, wall: true },
+  gameshelf: { name: "Game shelf", price: 35, shop: "game", width: 85, wall: true },
+
+  // Laundry and entry.
+  washer: { name: "Washer", price: 55, shop: "laundry", width: 65 },
+  dryer: { name: "Dryer", price: 55, shop: "laundry", width: 65 },
+  utilitysink: { name: "Laundry sink", price: 45, shop: "laundry", width: 80 },
+  ironingboard: { name: "Ironing board", price: 25, shop: "laundry", width: 85 },
+  entrybench: { name: "Shoe bench", price: 40, shop: "laundry", width: 110 },
+  coatstand: { name: "Coat stand", price: 30, shop: "laundry", width: 50 },
+  shoecabinet: { name: "Shoe cabinet", price: 40, shop: "laundry", width: 85 },
+  umbrellastand: { name: "Umbrella stand", price: 15, shop: "laundry", width: 30 },
+  keyshelf: { name: "Key shelf", price: 20, shop: "laundry", width: 70, wall: true },
+
+  // Patio.
+  gardenbench: { name: "Garden bench", price: 50, shop: "patio", width: 120 },
+  cafetable: { name: "Cafe table", price: 35, shop: "patio", width: 60 },
+  patiochair: { name: "Patio chair", price: 40, shop: "patio", width: 70 },
+  planter: { name: "Herb planter", price: 35, shop: "patio", width: 100 },
+  birdbath: { name: "Birdbath", price: 30, shop: "patio", width: 50 },
+  pottingbench: { name: "Potting bench", price: 45, shop: "patio", width: 110 },
+  fence: { name: "Little fence", price: 20, shop: "patio", width: 100 },
+  hangingplanter: { name: "Hanging plant", price: 25, shop: "patio", width: 55, wall: true },
+  lantern: { name: "Lantern", price: 20, shop: "patio", width: 35, wall: true },
+
+  // For the cats.
+  catbedpink: { name: "Pink cat bed", price: 25, shop: "cats", width: 55 },
+  catbedgray: { name: "Dark cat bed", price: 25, shop: "cats", width: 55 },
+  catcave: { name: "Cat cave", price: 30, shop: "cats", width: 50 },
+  cattree: { name: "Cat tree", price: 50, shop: "cats", width: 70 },
+  scratchpost: { name: "Scratching post", price: 15, shop: "cats", width: 35 },
+  scratchlounger: { name: "Scratch lounger", price: 20, shop: "cats", width: 60 },
+  foodbowls: { name: "Food bowls", price: 15, shop: "cats", width: 45 },
+  fountain: { name: "Water fountain", price: 20, shop: "cats", width: 35 },
+  litterbox: { name: "Litter box", price: 15, shop: "cats", width: 55 },
+  coveredlitter: { name: "Covered litter box", price: 25, shop: "cats", width: 55 },
+  tunnel: { name: "Play tunnel", price: 20, shop: "cats", width: 65 },
+  toybasket: { name: "Toy basket", price: 15, shop: "cats", width: 45 },
 };
+
+// The pages of the shop, in order (the arrows at the top of the shop flip through them).
+// The shop opens to the page for the room you're in.
+const SHOP_PAGES = [
+  ...HOUSE_ROOMS.map(room => ({ id: room.id, name: room.name })),
+  { id: "cats", name: "For the cats" },
+  { id: "looks", name: "Walls + floors" },
+];
 
 // Load every furniture picture.
 const FURNITURE_PICTURES = {};
@@ -4744,18 +4924,45 @@ Object.keys(FURNITURE).forEach(type => {
   FURNITURE_PICTURES[type] = picture;
 });
 
+// Wallpapers and floors. The ones with "picture" use a tile from images/textures
+// (the colors are just for while it loads).
 const WALLPAPERS = {
   pink: { name: "Pink stripes", price: 0, colors: ["#F8D9E2", "#F4C6D3"], pattern: "stripes" },
   blue: { name: "Sky blue", price: 30, colors: ["#D6ECFE", "#C2E1FB"], pattern: "stripes" },
   lavender: { name: "Lavender", price: 30, colors: ["#E6DDF7", "#D9CDF2"], pattern: "stripes" },
   cream: { name: "Cream checks", price: 30, colors: ["#FFF4EA", "#F5E4D3"], pattern: "checks" },
   hearts: { name: "Hearts", price: 45, colors: ["#FDE7EE", "#F4A6BD"], pattern: "hearts" },
+  plaster: { name: "Cream plaster", price: 30, colors: ["#F3EBE0", "#F3EBE0"], picture: "plaster" },
+  lavenderplaster: { name: "Lavender plaster", price: 30, colors: ["#CDBFE0", "#CDBFE0"], picture: "lavenderplaster" },
+  blueplaster: { name: "Blue plaster", price: 30, colors: ["#B9D2DE", "#B9D2DE"], picture: "blueplaster" },
+  pinkcream: { name: "Pink + cream stripes", price: 35, colors: ["#F3D3D3", "#F3D3D3"], picture: "pinkcream" },
+  bluestars: { name: "Little stars", price: 40, colors: ["#F1EADF", "#F1EADF"], picture: "bluestars" },
+  moonstars: { name: "Moons + stars", price: 45, colors: ["#3D3A45", "#3D3A45"], picture: "moonstars" },
+  brick: { name: "Cream brick", price: 40, colors: ["#EFE7DA", "#EFE7DA"], picture: "brick" },
+  sage: { name: "Sage leaves", price: 40, colors: ["#97A58C", "#97A58C"], picture: "sage" },
+  diamonds: { name: "Pink diamonds", price: 40, colors: ["#E2B9B6", "#E2B9B6"], picture: "diamonds" },
 };
 const FLOORS = {
   wood: { name: "Wood floor", price: 0, colors: ["#E3B07A", "#C9925C"], pattern: "planks" },
   pinktile: { name: "Pink tiles", price: 40, colors: ["#F8D9E2", "#F0C0CF"], pattern: "checks" },
   carpet: { name: "Blue carpet", price: 40, colors: ["#B9D4F2", "#A3C4EC"], pattern: "dots" },
+  honeyoak: { name: "Honey oak", price: 35, colors: ["#C98E52", "#C98E52"], picture: "honeyoak" },
+  walnut: { name: "Dark walnut", price: 35, colors: ["#5A3E2E", "#5A3E2E"], picture: "walnut" },
+  whitewash: { name: "Whitewashed wood", price: 35, colors: ["#E6DCCD", "#E6DCCD"], picture: "whitewash" },
+  charcoalwood: { name: "Charcoal wood", price: 35, colors: ["#4A4A50", "#4A4A50"], picture: "charcoalwood" },
+  checker: { name: "Checker tiles", price: 40, colors: ["#E9DFD0", "#A8A09A"], picture: "checker" },
+  pinktiles: { name: "Little pink tiles", price: 40, colors: ["#F0C9C9", "#F0C9C9"], picture: "pinktiles" },
+  slate: { name: "Slate stone", price: 40, colors: ["#6E7E93", "#6E7E93"], picture: "slate" },
+  lavendercarpet: { name: "Lavender carpet", price: 40, colors: ["#A996B6", "#A996B6"], picture: "lavendercarpet" },
+  bluecarpet: { name: "Powder blue carpet", price: 40, colors: ["#9DB0D2", "#9DB0D2"], picture: "bluecarpet" },
 };
+
+// Load the wallpaper and floor tiles.
+[...Object.values(WALLPAPERS), ...Object.values(FLOORS)].forEach(look => {
+  if (!look.picture) return;
+  look.image = new Image();
+  look.image.src = `images/textures/${look.picture}.png`;
+});
 
 // The pixel coin, for prices and the coin count.
 const COIN = [
@@ -4866,8 +5073,13 @@ function newSpot(type) {
 // How big a piece of furniture is drawn, in screen pixels.
 function furnitureSize(type, art) {
   const picture = FURNITURE_PICTURES[type];
-  const scale = art * (FURNITURE[type].size || 1);
-  if (!picture.naturalWidth) return { width: 60 * scale, height: 60 * scale };   // still loading
+  const kind = FURNITURE[type];
+  if (!picture.naturalWidth) {                                     // still loading
+    const guess = (kind.width || 60) * art;
+    return { width: guess, height: guess };
+  }
+  // "width" says how wide it is; otherwise "size" says how much to grow or shrink the picture.
+  const scale = art * (kind.width ? kind.width / picture.naturalWidth : (kind.size || 1));
   return { width: picture.naturalWidth * scale, height: picture.naturalHeight * scale };
 }
 
@@ -4941,7 +5153,15 @@ function fillPattern(look, x, y, width, height, unit) {
   ctx.fillStyle = look.colors[0];
   ctx.fillRect(x, y, width, height);
   ctx.fillStyle = look.colors[1];
-  if (look.pattern === "stripes") {
+  if (look.image && look.image.naturalWidth) {
+    // A picture tile, repeated. Each tile is drawn "unit * 2" wide.
+    const tile = ctx.createPattern(look.image, "repeat");
+    const scale = (unit * 2) / look.image.naturalWidth;
+    tile.setTransform(new DOMMatrix().translate(x, y).scale(scale));
+    ctx.imageSmoothingEnabled = true;
+    ctx.fillStyle = tile;
+    ctx.fillRect(x, y, width, height);
+  } else if (look.pattern === "stripes") {
     for (let stripe = x; stripe < x + width; stripe += unit) ctx.fillRect(stripe, y, unit / 2, height);
   } else if (look.pattern === "checks") {
     for (let row = 0; row * unit < height; row++) {
@@ -4985,21 +5205,24 @@ function drawHouse(inside, time) {
   const house = state.house;
 
   // The room fills everything left of the shop: wall on top, floor below.
-  const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - HOUSE_SIDEBAR - 8, bottom: inside.bottom - 6 };
+  // (With the shop hidden, the room gets the whole window.)
+  const shopRoom = state.houseShopHidden ? 0 : HOUSE_SIDEBAR + 2;
+  const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - shopRoom - 6, bottom: inside.bottom - 6 };
   const roomWidth = space.right - space.left, roomHeight = space.bottom - space.top;
   const wallHeight = Math.round(roomHeight * HOUSE_WALL);
   const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
   const layout = houseLayout = {
     left: space.left, wallTop: space.top, wallHeight, floorTop: space.top + wallHeight,
-    floorHeight: roomHeight - wallHeight, roomWidth, sidebar,
+    floorHeight: roomHeight - wallHeight, roomWidth, roomHeight, sidebar,
     // How much the pictures are shrunk, so everything fits this room's size.
     art: roomWidth / 560 * HOUSE_ART_SIZE,
   };
+  const room = currentRoomId();
 
-  // The wall and floor.
+  // This room's wall and floor.
   const tile = roomWidth / 9;
-  fillPattern(WALLPAPERS[house.wallpaper] || WALLPAPERS.pink, layout.left, layout.wallTop, roomWidth, wallHeight, tile / 2);
-  fillPattern(FLOORS[house.floor] || FLOORS.wood, layout.left, layout.floorTop, roomWidth, layout.floorHeight, tile);
+  fillPattern(WALLPAPERS[roomLook(house.wallpaper, room, "pink")] || WALLPAPERS.pink, layout.left, layout.wallTop, roomWidth, wallHeight, tile / 2);
+  fillPattern(FLOORS[roomLook(house.floor, room, "wood")] || FLOORS.wood, layout.left, layout.floorTop, roomWidth, layout.floorHeight, tile);
   ctx.fillStyle = "#B07A52";                                  // the baseboard
   ctx.fillRect(layout.left, layout.floorTop - 3, roomWidth, 4);
 
@@ -5008,17 +5231,19 @@ function drawHouse(inside, time) {
   ctx.rect(layout.left, layout.wallTop, roomWidth, roomHeight);
   ctx.clip();
 
-  // Where each piece of furniture is this frame (the one being dragged follows the mouse).
-  const placed = house.items.filter(item => item.placed && FURNITURE[item.type]);
+  // Where each piece of furniture is this frame, in every room (you two and the cats use
+  // furniture in the other rooms too). The one being dragged follows the mouse.
+  const allPlaced = house.items.filter(item => item.placed && FURNITURE[item.type]);
+  const placed = allPlaced.filter(item => itemRoom(item) === room);    // just this room's
   const dragId = houseDrag && houseDrag.moved ? houseDrag.item.id : null;
   const boxes = {};
-  placed.forEach(item => {
+  allPlaced.forEach(item => {
     const spot = item.id === dragId ? houseDrag.spot : clampSpot(item, itemSpot(item), layout);
     boxes[item.id] = furnitureBox(item, layout, spot);
   });
 
-  // You two and the cats decide what to do next, and move a little.
-  updateFolks(layout, placed, boxes, time);
+  // You two and the cats decide what to do next, and move a little (in every room).
+  updateFolks(layout, allPlaced, boxes, time);
 
   // Draw everything from back to front: rugs, then wall things, then furniture and
   // people in order of how far forward they are (so things in front cover things behind).
@@ -5027,7 +5252,9 @@ function drawHouse(inside, time) {
     const depth = kind.rug ? -2000 + box.top + box.height : kind.wall ? -1000 : box.top + box.height;
     return { depth, draw: () => drawHouseItem(item, box, item.id === dragId) };
   });
-  state.folks.forEach(folk => drawables.push({ depth: folkDepth(folk, layout, boxes), draw: () => drawFolk(folk, layout, boxes, time) }));
+  state.folks.filter(folk => folk.room === room).forEach(folk => {
+    drawables.push({ depth: folkDepth(folk, layout, boxes), draw: () => drawFolk(folk, layout, boxes, time) });
+  });
   drawables.sort((a, b) => a.depth - b.depth).forEach(thing => thing.draw());
   ctx.restore();
 
@@ -5035,7 +5262,57 @@ function drawHouse(inside, time) {
   ctx.lineWidth = 2;
   ctx.strokeRect(layout.left, layout.wallTop, roomWidth, roomHeight);
 
-  drawHouseShop(house, sidebar);
+  drawRoomArrows(layout);
+  if (state.houseShopHidden) {
+    // A button in the room's top right corner to bring the shop back.
+    drawButton(layout.left + roomWidth - 34, layout.wallTop + 15, 56, 20, "Shop", COLORS.acceptFill, COLORS.acceptText,
+               () => { playSound("click"); state.houseShopHidden = false; });
+    layout.sidebar = { left: -1, top: -1, right: -1, bottom: -1 };    // (nothing to drop things on)
+  } else {
+    drawHouseShop(house, sidebar);
+  }
+}
+
+// The room's name at the top, and arrows on the sides to the rooms next door.
+function drawRoomArrows(layout) {
+  const middle = layout.left + layout.roomWidth / 2;
+  const name = HOUSE_ROOMS[state.houseRoom].name;
+  ctx.font = FONTS.small;
+  const half = ctx.measureText(name).width / 2 + 10;
+  steppedBox(middle - half, layout.wallTop + 6, middle + half, layout.wallTop + 24, 2, COLORS.cream, COLORS.text, 1.5);
+  write(name, middle, layout.wallTop + 15.5, FONTS.small, COLORS.text);
+
+  // -1 is the arrow to the room on the left, 1 to the room on the right.
+  layout.arrows = [];
+  const y = layout.wallTop + layout.roomHeight / 2;
+  [-1, 1].forEach(direction => {
+    const next = state.houseRoom + direction;
+    if (next < 0 || next >= HOUSE_ROOMS.length) return;     // no room that way
+    const x = direction < 0 ? layout.left + 18 : layout.left + layout.roomWidth - 18;
+    const box = { left: x - 13, top: y - 20, right: x + 13, bottom: y + 20, id: `house:arrow:${direction}`,
+                  onClick: () => goToRoom(next) };
+    layout.arrows.push({ direction, box });
+    hitBoxes.push(box);
+    // Pink when the mouse is on it (or when furniture is dragged onto it).
+    const lit = state.hoverId === box.id || (houseDrag && houseDrag.overArrow === direction);
+    steppedBox(box.left, box.top, box.right, box.bottom, 2, lit ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
+    // The little triangle, pointing that way.
+    ctx.fillStyle = COLORS.text;
+    ctx.beginPath();
+    ctx.moveTo(x + direction * 6, y);
+    ctx.lineTo(x - direction * 5, y - 8);
+    ctx.lineTo(x - direction * 5, y + 8);
+    ctx.closePath();
+    ctx.fill();
+  });
+}
+
+function goToRoom(number) {
+  playSound("click");
+  state.houseRoom = number;
+  // The shop flips to this room's page.
+  state.shopPage = number;
+  state.houseScroll = 0;
 }
 
 // One piece of furniture (see-through while it's being dragged), and its click spot.
@@ -5061,6 +5338,9 @@ function drawHouseShop(house, sidebar) {
   // How many coins you have together.
   drawSpriteScaled(COIN, COIN_COLORS, sidebar.left + 10, sidebar.top + 8, 2);
   write(`${house.coins} coins`, sidebar.left + 26, sidebar.top + 14, FONTS.small, COLORS.text, "left");
+  // A little button to hide the shop (so you can see the whole room).
+  drawButton(sidebar.right - 18, sidebar.top + 14, 22, 16, "»", COLORS.white, COLORS.text,
+             () => { playSound("click"); state.houseShopHidden = true; });
 
   // The tabs.
   ["shop", "mine"].forEach((tab, number) => {
@@ -5080,9 +5360,25 @@ function drawHouseShop(house, sidebar) {
     return;
   }
 
+  // In the shop: which page (living room, kitchen, ...), with arrows to flip through them.
+  let listTop = sidebar.top + 48;
+  if (state.houseTab === "shop") {
+    const page = SHOP_PAGES[state.shopPage];
+    write(page.name, middle, sidebar.top + 57, FONTS.small, COLORS.text);
+    [-1, 1].forEach(direction => {
+      const x = direction < 0 ? sidebar.left + 14 : sidebar.right - 14;
+      drawButton(x, sidebar.top + 57, 16, 16, direction < 0 ? "<" : ">", COLORS.white, COLORS.text, () => {
+        playSound("click");
+        state.shopPage = (state.shopPage + direction + SHOP_PAGES.length) % SHOP_PAGES.length;
+        state.houseScroll = 0;
+      });
+    });
+    listTop = sidebar.top + 68;
+  }
+
   // The cards: everything you can buy, or everything you have put away.
   const cards = state.houseTab === "shop" ? shopCards(house) : mineCards(house);
-  const list = { left: sidebar.left + 4, top: sidebar.top + 48, right: sidebar.right - 4, bottom: sidebar.bottom - 20 };
+  const list = { left: sidebar.left + 4, top: listTop, right: sidebar.right - 4, bottom: sidebar.bottom - 20 };
   const cardWidth = (list.right - list.left - 6) / 2, cardHeight = 54;
   const contentHeight = Math.ceil(cards.length / 2) * (cardHeight + 4);
   state.houseMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
@@ -5140,31 +5436,38 @@ function lookPicture(look) {
   };
 }
 
+// The cards on the shop page you're on: that page's furniture, or (on "Walls + floors")
+// the wallpapers and floors you don't have yet.
 function shopCards(house) {
-  const furniture = Object.entries(FURNITURE).filter(([, kind]) => kind.price > 0).map(([type, kind]) => ({
-    label: kind.name, price: kind.price, picture: cardPicture(type), onClick: () => buyFurniture(type),
-  }));
-  const walls = Object.entries(WALLPAPERS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
+  const page = SHOP_PAGES[state.shopPage].id;
+  if (page !== "looks") {
+    return Object.entries(FURNITURE).filter(([, kind]) => kind.price > 0 && kind.shop === page).map(([type, kind]) => ({
+      label: kind.name, price: kind.price, picture: cardPicture(type), onClick: () => buyFurniture(type),
+    }));
+  }
+  const walls =Object.entries(WALLPAPERS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
     label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("wallpaper", key),
   }));
   const floors = Object.entries(FLOORS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
     label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("floor", key),
   }));
-  return [...furniture, ...walls, ...floors];
+  return [...walls, ...floors];
 }
 
 function mineCards(house) {
   const stored = house.items.filter(item => !item.placed && FURNITURE[item.type]).map(item => ({
     label: FURNITURE[item.type].name, picture: cardPicture(item.type), onClick: () => placeStored(item),
   }));
+  // Wallpapers and floors you own (clicking one puts it in the room you're looking at).
+  const room = currentRoomId();
   const looks = [
     ...Object.entries(WALLPAPERS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
-      label: look.name, picture: lookPicture(look), current: house.wallpaper === key,
-      onClick: () => { playSound("click"); saveHouse({ wallpaper: key }); },
+      label: look.name, picture: lookPicture(look), current: roomLook(house.wallpaper, room, "pink") === key,
+      onClick: () => { playSound("click"); saveHouse({ wallpaper: changeRoomLook(house.wallpaper, room, key) }); },
     })),
     ...Object.entries(FLOORS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
-      label: look.name, picture: lookPicture(look), current: house.floor === key,
-      onClick: () => { playSound("click"); saveHouse({ floor: key }); },
+      label: look.name, picture: lookPicture(look), current: roomLook(house.floor, room, "wood") === key,
+      onClick: () => { playSound("click"); saveHouse({ floor: changeRoomLook(house.floor, room, key) }); },
     })),
   ];
   return [...stored, ...looks];
@@ -5185,8 +5488,8 @@ async function buyFurniture(type) {
       const doc = await transaction.get(houseRef());
       const data = doc.data();
       if (data.coins < kind.price) throw new Error("coins");
-      // It goes right into the room (drag it wherever you want it).
-      const item = { id: `${type}-${Date.now().toString(36)}`, type, ...newSpot(type), flip: false, placed: true };
+      // It goes right into the room you're looking at (drag it wherever you want it).
+      const item = { id: `${type}-${Date.now().toString(36)}`, type, ...newSpot(type), flip: false, placed: true, room: currentRoomId() };
       transaction.update(houseRef(), {
         coins: data.coins - kind.price, items: [...data.items, item],
         lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -5203,13 +5506,16 @@ async function buyLook(which, key) {
   if (state.house.coins < look.price) { notEnoughCoins(); return; }
   if (blockedInPreview()) return;
   playSound("coin", 0.6);
+  const room = currentRoomId();
   try {
     await database.runTransaction(async transaction => {
       const doc = await transaction.get(houseRef());
       const data = doc.data();
       if (data.coins < look.price) throw new Error("coins");
+      // It goes up in the room you're looking at (the other rooms keep theirs).
       transaction.update(houseRef(), {
-        coins: data.coins - look.price, owned: [...new Set([...(data.owned || []), key])], [which]: key,
+        coins: data.coins - look.price, owned: [...new Set([...(data.owned || []), key])],
+        [which]: changeRoomLook(data[which] || (which === "wallpaper" ? "pink" : "wood"), room, key),
         lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
     });
@@ -5219,11 +5525,11 @@ async function buyLook(which, key) {
   }
 }
 
-// Takes something out of "Mine" and puts it back in the room.
+// Takes something out of "Mine" and puts it in the room you're looking at.
 function placeStored(item) {
   playSound("click");
   const spot = typeof item.x === "number" ? {} : newSpot(item.type);
-  saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...spot, placed: true } : other)) });
+  saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...spot, placed: true, room: currentRoomId() } : other)) });
 }
 
 
@@ -5253,8 +5559,11 @@ function moveHouseDrag() {
   const y = kind.wall ? (state.mouse.y - drag.grabY - layout.wallTop) / layout.wallHeight
                       : (state.mouse.y - drag.grabY - layout.floorTop) / layout.floorHeight;
   drag.spot = clampSpot(drag.item, { x, y }, layout);
-  const shop = layout.sidebar;
-  drag.overShop = state.mouse.x >= shop.left && state.mouse.x <= shop.right && state.mouse.y >= shop.top && state.mouse.y <= shop.bottom;
+  const over = box => state.mouse.x >= box.left && state.mouse.x <= box.right && state.mouse.y >= box.top && state.mouse.y <= box.bottom;
+  drag.overShop = over(layout.sidebar);
+  // Over one of the arrows? (-1 or 1, or 0 if not.)
+  const arrow = (layout.arrows || []).find(other => over(other.box));
+  drag.overArrow = arrow ? arrow.direction : 0;
 }
 
 // The mouse came up: drop it (or flip it, if it was just a click).
@@ -5268,6 +5577,12 @@ function endHouseDrag() {
   } else if (drag.overShop) {
     playSound("paper", 0.6);
     saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, placed: false } : other)) });
+  } else if (drag.overArrow) {
+    // Dropped on an arrow: it moves into that room (just inside the door), and you go with it.
+    playSound("flip", 0.5);
+    state.houseRoom += drag.overArrow;
+    const spot = { x: drag.overArrow < 0 ? 0.8 : 0.2, y: Math.round(drag.spot.y * 1000) / 1000, room: currentRoomId() };
+    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, ...spot } : other)) });
   } else {
     playSound("flip", 0.5);
     const spot = { x: Math.round(drag.spot.x * 1000) / 1000, y: Math.round(drag.spot.y * 1000) / 1000 };
@@ -5302,22 +5617,56 @@ const FOLK_SPEED = { person: 60, cat: 70 };
 //   facing - "down" = facing out, "up" = your back to us (at the desk)
 const SEATS = {
   couch: { spots: [0.33, 0.67], line: 0.6, show: 0.62, facing: "down" },
+  darksofa: { spots: [0.33, 0.67], line: 0.62, show: 0.62, facing: "down" },
+  gardenbench: { spots: [0.3, 0.7], line: 0.55, show: 0.62, facing: "down" },
+  entrybench: { spots: [0.3, 0.7], line: 0.4, show: 0.62, facing: "down" },
+  bench: { spots: [0.3, 0.7], line: 0.55, show: 0.62, facing: "down" },
+  armchair: { spots: [0.5], line: 0.62, show: 0.62, facing: "down" },
+  darkarmchair: { spots: [0.5], line: 0.62, show: 0.62, facing: "down" },
+  patiochair: { spots: [0.5], line: 0.6, show: 0.62, facing: "down" },
+  pinkchair: { spots: [0.5], line: 0.62, show: 0.62, facing: "down" },
+  bluechair: { spots: [0.5], line: 0.62, show: 0.62, facing: "down" },
+  lavenderchair: { spots: [0.5], line: 0.6, show: 0.62, facing: "down" },
+  pinkgamingchair: { spots: [0.5], line: 0.6, show: 0.62, facing: "down" },
   bed: { spots: [0.33, 0.62], line: 0.46, show: 0.4, facing: "down", sleepy: true },
+  creambed: { spots: [0.33, 0.67], line: 0.5, show: 0.4, facing: "down", sleepy: true },
+  darkbed: { spots: [0.33, 0.67], line: 0.5, show: 0.4, facing: "down", sleepy: true },
   desk: { spots: [0.5], line: 0.82, show: 0.68, facing: "up" },
+  gamingdesk: { spots: [0.3, 0.7], line: 0.95, show: 0.75, facing: "up" },
+  drawingdesk: { spots: [0.4], line: 0.95, show: 0.75, facing: "up" },
 };
 // Where the cats nap on things.
 const NAP_SPOTS = {
   bed: { x: 0.6, line: 0.78 },
+  creambed: { x: 0.6, line: 0.8 },
+  darkbed: { x: 0.6, line: 0.8 },
   couch: { x: 0.5, line: 0.62 },
+  darksofa: { x: 0.5, line: 0.62 },
+  armchair: { x: 0.5, line: 0.66 },
+  darkarmchair: { x: 0.5, line: 0.66 },
   rug: { x: 0.5, line: 0.7 },
+  ovalrug: { x: 0.5, line: 0.7 },
+  starrug: { x: 0.5, line: 0.7 },
+  catbedpink: { x: 0.5, line: 0.7 },
+  catbedgray: { x: 0.5, line: 0.7 },
+  catcave: { x: 0.5, line: 0.9 },
+  scratchlounger: { x: 0.5, line: 0.65 },
+  cattree: { x: 0.35, line: 0.16 },
+  ottoman: { x: 0.5, line: 0.5 },
 };
 
 state.folks = null;
 let folksLastTime = null;
 
+// How often they wander into another room: 1 = sometimes, bigger = more often.
+const ROOM_WANDER = 1;
+
 function makeFolks() {
   return FOLKS.map((info, number) => ({
     info, x: 0.2 + number * 0.2, y: 0.55 + (number % 2) * 0.25, facing: "down",
+    // Which room they're in. They start spread out, so no room is empty.
+    room: HOUSE_ROOMS[number % HOUSE_ROOMS.length].id,
+    leaving: 0,     // -1 or 1 while walking out the left or right side into the next room
     doing: info.person ? "stand" : "sit", timer: 1 + number * 1.5, target: null, goal: null, petted: 0,
   }));
 }
@@ -5335,8 +5684,9 @@ function updateFolks(layout, placed, boxes, time) {
 
   state.folks.forEach(folk => {
     folk.petted = Math.max(0, folk.petted - seconds);
-    // The furniture they were using got moved or put away? They get up.
-    if (folk.goal && (!byId[folk.goal.itemId] || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
+    // The furniture they were using got moved, put away, or taken to another room? They get up.
+    const using = folk.goal && byId[folk.goal.itemId];
+    if (folk.goal && (!using || itemRoom(using) !== folk.room || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
       folk.goal = null;
       folk.doing = folk.info.person ? "stand" : "sit";
       folk.timer = 1.5;
@@ -5351,6 +5701,16 @@ function updateFolks(layout, placed, boxes, time) {
         // Made it! Sit / nap / work if they were heading to some furniture.
         folk.x = target.x;
         folk.y = target.y;
+        if (folk.leaving) {
+          // Out the side of the room: come in the other side of the room next door,
+          // and walk a little way in.
+          const next = HOUSE_ROOMS.findIndex(other => other.id === folk.room) + folk.leaving;
+          folk.room = HOUSE_ROOMS[keepBetween(next, 0, HOUSE_ROOMS.length - 1)].id;
+          folk.x = folk.leaving > 0 ? -0.08 : 1.08;
+          folk.target = { x: folk.leaving > 0 ? between(0.15, 0.5, Math.random()) : between(0.5, 0.85, Math.random()), y: folk.y };
+          folk.leaving = 0;
+          return;
+        }
         if (folk.goal) {
           folk.doing = "using";
           folk.timer = between(10, 25, Math.random());
@@ -5386,7 +5746,14 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   folk.facing = "down";
 
   const choices = ["walk", "walk", isCat ? "sit" : "stand"];
-  placed.forEach(item => {
+  // Going into another room (if there's one that way).
+  const roomNumber = HOUSE_ROOMS.findIndex(other => other.id === folk.room);
+  for (let time = 0; time < ROOM_WANDER; time++) {
+    if (roomNumber > 0) choices.push("leave left");
+    if (roomNumber < HOUSE_ROOMS.length - 1) choices.push("leave right");
+  }
+  // Only the furniture in the room they're in.
+  placed.filter(item => itemRoom(item) === folk.room).forEach(item => {
     if (isCat) {
       if (NAP_SPOTS[item.type] && !spotTaken(item.id, "nap", folk)) choices.push({ itemId: item.id, spot: "nap", nap: true });
     } else if (SEATS[item.type]) {
@@ -5401,6 +5768,11 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   if (choice === "walk") {
     folk.doing = "walk";
     folk.target = { x: between(0.08, 0.92, Math.random()), y: between(0.3, 0.95, Math.random()) };
+  } else if (choice === "leave left" || choice === "leave right") {
+    // Walk right off the side of the room (see updateFolks for the other side).
+    folk.doing = "walk";
+    folk.leaving = choice === "leave left" ? -1 : 1;
+    folk.target = { x: folk.leaving < 0 ? -0.08 : 1.08, y: keepBetween(folk.y, 0.4, 0.9) };
   } else if (typeof choice === "string") {
     folk.doing = choice;                // "stand", "sit", or "nap" (right on the floor)
     folk.timer = choice === "nap" ? between(8, 18, Math.random()) : between(2, 5, Math.random());
@@ -5497,8 +5869,8 @@ function petFolk(folk) {
   }
   if (sounds.meow) playSound("meow", 0.6);
   else playSound("click");
-  // A walking cat stops to enjoy it.
-  if (folk.doing === "walk" && !folk.goal) {
+  // A walking cat stops to enjoy it (unless it's on its way out of the room).
+  if (folk.doing === "walk" && !folk.goal && !folk.leaving) {
     folk.doing = "sit";
     folk.timer = 2.5;
   }
