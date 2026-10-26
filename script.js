@@ -30,7 +30,7 @@ const INVITES = [
   {
     id: "2026-10-26",
     date: "2026-10-26",
-    label: "Oct 26",
+    label: "Oct 26, 2026",
     title: `${RECIPIENT_NAME}, be my date?`,
     plan: "Top secret",
     bring: "Your cute self, and maybe some snacks",
