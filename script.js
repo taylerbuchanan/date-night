@@ -3257,13 +3257,8 @@ function drawScreensaver(time) {
   drawPixels(HEART, Math.round(saver.x), Math.round(saver.y), SCREENSAVER_HEART_SIZE, SCREENSAVER_COLORS[saver.color]);
 }
 
-canvas.addEventListener("pointermove", event => {
-  state.mouse = toDrawing(event);
-  stillHere();
-});
-
-canvas.addEventListener("pointerdown", event => {
-  state.mouse = toDrawing(event);
+// A click (or a tap) on whatever is under the mouse.
+function handleClick() {
   // If this click woke up the screensaver, that's all it does.
   if (wakeUp()) return;
   const box = boxUnderMouse();
@@ -3272,7 +3267,63 @@ canvas.addEventListener("pointerdown", event => {
   // The power menu closes on any click except the power button itself.
   if (!box || box.id !== "power") state.powerMenu = false;
   if (box) box.onClick();
+}
+
+// FINGER SCROLLING (on phones and tablets): dragging up and down scrolls the
+// "Open when..." list and the Arcade, like a phone app.
+//
+// To tell a tap from a drag, a finger tap only counts when the finger lifts up,
+// and only if it didn't move much. (Mouse clicks still happen right away.)
+let touch = null;   // { y, startX, startY, moved } while a finger is on the screen
+
+// Which list a finger drag would scroll right now (or null if nothing can scroll).
+function scrollableList() {
+  if (state.window === "openwhen" && state.openWhen === null && state.letterListMaxScroll) {
+    return { key: "letterListScroll", max: state.letterListMaxScroll };
+  }
+  if (state.window === "games" && state.launcherMaxScroll) {
+    return { key: "launcherScroll", max: state.launcherMaxScroll };
+  }
+  return null;
+}
+
+canvas.addEventListener("pointermove", event => {
+  state.mouse = toDrawing(event);
+  stillHere();
+
+  if (touch) {
+    // Moved more than a few pixels? Then it's a drag, not a tap.
+    if (Math.abs(state.mouse.y - touch.startY) > 6 || Math.abs(state.mouse.x - touch.startX) > 6) touch.moved = true;
+    const list = scrollableList();
+    if (touch.moved && list) {
+      // Dragging up scrolls down (the list follows the finger).
+      state[list.key] = keepBetween((state[list.key] || 0) + (touch.y - state.mouse.y), 0, list.max);
+    }
+    touch.y = state.mouse.y;
+  }
 });
+
+canvas.addEventListener("pointerdown", event => {
+  state.mouse = toDrawing(event);
+  // While playing a game, taps count right away (so jumping isn't late).
+  const playing = state.game && state.game.playing;
+  if (event.pointerType === "touch" && !playing) {
+    touch = { y: state.mouse.y, startX: state.mouse.x, startY: state.mouse.y, moved: false };
+    return;
+  }
+  handleClick();
+});
+
+canvas.addEventListener("pointerup", event => {
+  if (!touch) return;
+  const wasTap = !touch.moved;
+  touch = null;
+  if (wasTap) {
+    state.mouse = toDrawing(event);
+    handleClick();
+  }
+});
+canvas.addEventListener("pointercancel", () => { touch = null; });
 
 // Opens or closes the Start menu.
 function toggleStartMenu() {

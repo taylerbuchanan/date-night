@@ -40,7 +40,9 @@
       width: min(100vw, 150dvh);
       aspect-ratio: 3 / 2;
       display: block;
-      touch-action: manipulation;
+      /* Let the site handle finger drags itself (for scrolling lists and games),
+         instead of the phone trying to scroll or zoom the page. */
+      touch-action: none;
       /* Softly fade the left and right edges, so the picture blends into the page. */
       -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
       mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
