@@ -368,7 +368,8 @@ function extendDesk() {
   const top = box.top;
   const edge = box.top + box.height * DESK_EDGE_TOP;
   const desk = box.top + box.height * DESK_TOP;
-  document.body.style.background = `linear-gradient(to bottom,
+  // (The page the drawing is on: the big page, or the floating pop-out window.)
+  canvas.ownerDocument.body.style.background = `linear-gradient(to bottom,
     #CBBED8 0px, #CABDD6 ${top}px, #C0B5CE ${edge}px,
     #A59A9C ${edge}px, #A59A9C ${desk}px,
     #F5E5CE ${desk}px, #FCEDD5 100%)`;
@@ -3415,11 +3416,16 @@ function drawMemoryInvites(inside) {
     drawEmptyFolderMessage(inside, "No past dates yet...", "but not for long!");
     return;
   }
-  memories.forEach((invite, number) => {
+  // Each invitation, and right after it, a "Date night" icon if it had a planned date
+  // (the game, the cinema...). Clicking that one plays the date back from Part 1.
+  const icons = [];
+  memories.forEach(invite => {
     const icon = inviteIcon(invite);
     if (icon.tag === "new") icon.tag = null;
-    drawIcon(icon, ...memorySpot(inside, number));
+    icons.push(icon);
+    if (DATE_NIGHT && invite.id === DATE_NIGHT.id) icons.push({ label: "Date night", picture: drawPlanIcon, onClick: lookBackAtDate });
   });
+  icons.forEach((icon, number) => drawIcon(icon, ...memorySpot(inside, number)));
 }
 
 // Has he read this love note yet? (His browser remembers.)
@@ -7363,6 +7369,16 @@ function previewDateNight() {
   curtainForStep = null;
   startDateNight();
 }
+// FROM MEMORIES: "Date night" plays the date back from Part 1, with whatever got picked,
+// on just this computer (like Preview: nothing is saved, nobody gets pinged).
+function lookBackAtDate() {
+  openWindow("datenight");
+  if (!state.datePreview) state.datePreview = { real: { ...state.dateNight } };
+  state.datePreview.lookBack = true;
+  state.dateNight = { step: 1, picks: { ...state.datePreview.real.picks } };
+  state.datePicking = false;
+  curtainForStep = null;
+}
 function endDatePreview() {
   if (!state.datePreview) return;
   state.dateNight = state.datePreview.real;
@@ -7380,7 +7396,9 @@ function previousDatePart() {
   playSound("click");
   state.datePicking = false;
   curtainForStep = null;     // so the cinema's curtains open again
-  saveDateNight({ step: Math.max(0, state.dateNight.step - 1) });
+  // (Looking back from Memories, it stops at Part 1 instead of the countdown.)
+  const first = state.datePreview && state.datePreview.lookBack ? 1 : 0;
+  saveDateNight({ step: Math.max(first, state.dateNight.step - 1) });
 }
 function openSteamPage(name) {
   playSound("click");
@@ -7411,7 +7429,8 @@ function drawDateNight(area, time) {
   ctx.restore();
 
   // A Back button in the top right corner, to go back a part (for both of you).
-  if (DATE_NIGHT && state.dateNight.step >= 1 && !state.datePicking) {
+  const lookingBack = state.datePreview && state.datePreview.lookBack;
+  if (DATE_NIGHT && state.dateNight.step >= (lookingBack ? 2 : 1) && !state.datePicking) {
     drawButton(area.right - 42, area.top + 15, 70, 22, "Back", COLORS.white, COLORS.text, previousDatePart);
   }
 
@@ -7422,7 +7441,7 @@ function drawDateNight(area, time) {
   }
   if (state.datePreview) {
     steppedBox(area.left + 4, area.top + 4, area.left + 168, area.top + 20, 2, COLORS.titleBar, COLORS.text, 1.5);
-    write("Preview (only you see this)", area.left + 86, area.top + 12.5, FONTS.small, COLORS.text);
+    write(lookingBack ? "Looking back 💗" : "Preview (only you see this)", area.left + 86, area.top + 12.5, FONTS.small, COLORS.text);
   }
 
   // The "Something else" box, on top.
@@ -7720,17 +7739,19 @@ datePickForm.addEventListener("submit", event => {
 // ====================================================================================
 //
 // "Pop out" in the Start menu moves the little computer into its own tiny window that
-// floats on top of everything else on the screen. It zooms in on just the computer's
-// screen (no desk), so the words stay big enough to read.
+// floats on top of everything else on the screen. It zooms in on just the computer
+// (see POP_OUT_AREA), so the words stay big enough to read.
 //
 // This uses a browser feature called "Document Picture-in-Picture". Only Chrome, Edge,
 // and Brave on a computer have it, so on other browsers the menu item doesn't show up.
 
 // How big the floating window starts (he can drag its corner to make it bigger or smaller).
-const POP_OUT_SIZE = { width: 520, height: 345 };
+const POP_OUT_SIZE = { width: 560, height: 392 };
 
-// How much of the computer's frame to show around the screen, in drawing pixels.
-const POP_OUT_FRAME = 10;
+// The part of the picture to show, in drawing pixels: the whole computer, the flower,
+// and the top of the keyboard (the wall and desk around it get cut off).
+// To show more or less, change these numbers. (The whole picture is 768 by 512.)
+const POP_OUT_AREA = { left: 24, top: 0, width: 720, height: 504 };
 
 let poppedOut = null;   // the floating window, while the computer is popped out
 
@@ -7799,8 +7820,8 @@ function putComputerBack() {
   fitBigPage();
 }
 
-// THE BIG PAGE: in the installed app (or any small window), zoom in on just the computer's
-// screen too, the same way the pop-out does. In a big browser tab, show the whole desk.
+// THE BIG PAGE: in the installed app (or any small window), zoom in on just the computer
+// too, the same way the pop-out does. In a big browser tab, show the whole desk.
 // (Change this number to make it switch at a different window width.)
 const ZOOM_IN_BELOW_WIDTH = 760;
 
@@ -7810,7 +7831,6 @@ function fitBigPage() {
   const zoomIn = installed || window.innerWidth < ZOOM_IN_BELOW_WIDTH;
   document.body.classList.toggle("floating", zoomIn);
   if (zoomIn) {
-    document.body.style.background = "";
     fitToScreen(window);
   } else {
     // Undo the zoom, so the normal page sizes come back.
@@ -7825,16 +7845,11 @@ function fitPoppedOut() {
   if (poppedOut) fitToScreen(poppedOut);
 }
 
-// Zooms the drawing so just the computer's screen (plus a little of its frame) fills
-// the window. The rest of the picture (the desk, the wall) hangs off the edges where
-// you can't see it.
+// Zooms the drawing so the computer (POP_OUT_AREA) fills the window. The rest of the
+// picture hangs off the edges where you can't see it.
 function fitToScreen(win) {
-  const area = {
-    left: SCREEN.left - POP_OUT_FRAME, top: SCREEN.top - POP_OUT_FRAME,
-    width: SCREEN.right - SCREEN.left + POP_OUT_FRAME * 2,
-    height: SCREEN.bottom - SCREEN.top + POP_OUT_FRAME * 2,
-  };
-  // As big as fits, without cutting off any of the screen.
+  const area = POP_OUT_AREA;
+  // As big as fits, without cutting off any of the computer.
   const zoom = Math.min(win.innerWidth / area.width, win.innerHeight / area.height);
   // Center the screen in the window.
   const left = (win.innerWidth - area.width * zoom) / 2 - area.left * zoom;
@@ -7846,6 +7861,8 @@ function fitToScreen(win) {
     // No faded edges in here (they'd fade the screen itself).
     maskImage: "none", webkitMaskImage: "none",
   });
+  // If the window's a different shape, the wall and desk carry on past the picture's edges.
+  extendDesk();
 }
 
 // The next frame of the drawing. While popped out, the floating window does the timing,
