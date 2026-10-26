@@ -1500,21 +1500,32 @@ function drawWindow(time, onTop = true) {
 //   - Letters written on the site (with "Write one") show up for the other person.
 // Locked letters always go at the very end.
 function openWhenLetters() {
-  const written = IS_TAYLER ? [] : OPEN_WHEN;
-  const received = state.remoteLetters.filter(letter => letter.from === OTHER);
+  // (If you edited one of the letters in this file, the edited copy takes its place.)
+  const written = IS_TAYLER ? [] : OPEN_WHEN.map(letter => editedCopyOf(letter) || letter);
+  const received = state.remoteLetters.filter(letter => letter.from === OTHER && !letter.replaces);
   const all = [...written, ...received];
   const lockedAny = letter => isLocked(letter) || needsPassword(letter);
   return [...all.filter(letter => !lockedAny(letter)), ...all.filter(lockedAny)];
 }
 
 // The name his browser remembers a letter by (to know if it's been read).
+// (An edited copy of a letter from this file keeps the original's name, so if he
+// already read it, it stays read.)
 function letterKey(letter) {
+  if (letter.replaces) return `letter:${letter.replaces}`;
   return letter.id ? `letter:${letter.id}` : `letter:${letter.when}`;
 }
 
+// The edited copy of one of the letters written in this file (OPEN_WHEN), if you've edited it.
+function editedCopyOf(letter) {
+  return state.remoteLetters.find(other => other.replaces === letter.when && other.from === YOUR_NAME);
+}
+
 // Letters you've received on the site that haven't been opened yet.
+// (Edited copies of letters he already had don't count as new.)
 function unreadLetters() {
-  return state.remoteLetters.filter(letter => letter.from === OTHER && !remembers(`${SIDE}:${letterKey(letter)}`));
+  return state.remoteLetters.filter(letter => letter.from === OTHER && !letter.replaces &&
+                                              !remembers(`${SIDE}:${letterKey(letter)}`));
 }
 
 // The list of letters, or (once he picks one) that letter, opened up.
@@ -2226,15 +2237,21 @@ function checkForNewLetters() {
 
 // Saves a new "Open when..." letter and pings the other person.
 // password and unlocks (a day like "2026-12-25") are optional locks; "" means no lock.
-async function sendLetter(when, text, password = "", unlocks = "") {
+//   unlocks: a day like "2026-12-25", "" for no date lock, or null for "locked until we meet".
+//   replaces: when editing one of the letters written in this file, its "when" (so the
+//             edited copy takes its place). Edited copies don't ping.
+async function sendLetter(when, text, password = "", unlocks = "", replaces = null) {
   if (blockedInPreview()) throw new Error("preview");
   const letter = { when, text, from: ME, sentAt: firebase.firestore.FieldValue.serverTimestamp() };
   if (password) letter.password = password;
-  if (unlocks) letter.unlocks = unlocks;
+  if (unlocks || unlocks === null) letter.unlocks = unlocks;
+  if (replaces) letter.replaces = replaces;
   await database.collection("letters").add(letter);
+  if (!replaces) pingOther(`💌 ${ME} wrote you a new "Open when..." letter on the little computer!`);
 }
 
-// Saves changes to a letter you already sent. (An empty password or date removes that lock.)
+// Saves changes to a letter you already sent. (An empty password or date removes that lock;
+// unlocks: null keeps it "locked until we meet".)
 async function updateLetter(letter, when, text, password = "", unlocks = "") {
   if (blockedInPreview()) throw new Error("preview");
   const remove = firebase.firestore.FieldValue.delete();
@@ -2242,10 +2259,9 @@ async function updateLetter(letter, when, text, password = "", unlocks = "") {
     when,
     text,
     password: password || remove,
-    unlocks: unlocks || remove,
+    unlocks: unlocks === null ? null : (unlocks || remove),
     editedAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
-  pingOther(`💌 ${ME} wrote you a new "Open when..." letter on the little computer!`);
 }
 
 
@@ -2915,12 +2931,17 @@ function editLetter(letter) {
   fields.password.value = letter.password || "";
   fields.unlocks.value = letter.unlocks || "";
   letterPanel.querySelector(".send").textContent = "Save changes";
+  // The "we're about to meet" letter is locked with no date yet. Leaving the date empty keeps it that way.
+  letterPanel.querySelector(".problem").textContent = letter.unlocks === null
+    ? "This one stays locked until you meet (unless you pick an unlock date)." : "";
   state.writingLetter = true;
 }
 
-// The letters you've sent on the site, oldest first.
+// The letters you've sent, oldest first. On your side, that includes the ones written
+// in this file (OPEN_WHEN), or their edited copies.
 function sentLetters() {
-  return state.remoteLetters.filter(letter => letter.from === ME);
+  const written = IS_TAYLER ? OPEN_WHEN.map(letter => editedCopyOf(letter) || letter) : [];
+  return [...written, ...state.remoteLetters.filter(letter => letter.from === ME && !letter.replaces)];
 }
 
 letterPanel.querySelector(".cancel").addEventListener("click", () => {
@@ -2942,8 +2963,16 @@ letterForm.addEventListener("submit", async event => {
   problem.textContent = editingLetter ? "Saving..." : "Sending...";
   try {
     const editing = editingLetter;
-    if (editing) await updateLetter(editing, when, text, password, unlocks);
-    else await sendLetter(when, text, password, unlocks);
+    // A letter locked "until we meet" (no date) stays that way if the date is left empty.
+    const keepLocked = editing && editing.unlocks === null && !unlocks;
+    if (editing && editing.id) {
+      await updateLetter(editing, when, text, password, keepLocked ? null : unlocks);
+    } else if (editing) {
+      // One of the letters written in this file: save an edited copy that takes its place.
+      await sendLetter(when, text, password, keepLocked ? null : unlocks, editing.when);
+    } else {
+      await sendLetter(when, text, password, unlocks);
+    }
     playSound("win", 0.5);
     closeLetterForm();
     showPopup(editing ? "SAVED" : "SENT", editing ? "Your letter is updated! 💌"
