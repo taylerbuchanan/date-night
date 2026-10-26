@@ -3726,11 +3726,85 @@ const SPRITE_SHEETS = {
 const PERSON_ROWS = { down: 0, left: 1, right: 2, up: 3 };
 const CAT_ROWS = { sit: 0, left: 1, right: 2, down: 3, up: 4, lie: 5 };
 
+// How much extra room each cut-out frame gets around its box (some pictures poke out of it).
+const FRAME_PAD = 24;
+
 Object.values(SPRITE_SHEETS).forEach(sheet => {
   sheet.picture = new Image();
-  sheet.picture.onload = () => { sheet.ready = true; };
+  sheet.picture.onload = () => {
+    try { sheet.frames = cutOutFrames(sheet); } catch (oops) { sheet.frames = null; }
+    sheet.ready = true;
+  };
   sheet.picture.src = sheet.src;
 });
+
+// The pictures on the sheets aren't spaced perfectly evenly, so cutting the sheet into
+// equal boxes grabs bits of the neighbors (a line of feet above a head, etc).
+// Instead, this finds each separate blob of picture on the sheet, works out which box
+// its middle is in, and copies it onto that frame's own little canvas. Nothing from a
+// neighbor can sneak in. Each frame canvas is its box plus FRAME_PAD on every side.
+function cutOutFrames(sheet) {
+  const width = sheet.picture.naturalWidth, height = sheet.picture.naturalHeight;
+  const boxWidth = width / sheet.columns, boxHeight = height / sheet.rows;
+  const whole = document.createElement("canvas");
+  whole.width = width; whole.height = height;
+  const wholeCtx = whole.getContext("2d");
+  wholeCtx.drawImage(sheet.picture, 0, 0);
+  const pixels = wholeCtx.getImageData(0, 0, width, height);
+  const solid = index => pixels.data[index * 4 + 3] > 0;
+
+  // One empty canvas per frame.
+  const frames = [];
+  for (let row = 0; row < sheet.rows; row++) {
+    frames.push([]);
+    for (let column = 0; column < sheet.columns; column++) {
+      const frame = document.createElement("canvas");
+      frame.width = Math.ceil(boxWidth) + FRAME_PAD * 2;
+      frame.height = Math.ceil(boxHeight) + FRAME_PAD * 2;
+      frame.pixels = frame.getContext("2d").createImageData(frame.width, frame.height);
+      frames[row].push(frame);
+    }
+  }
+
+  // Go through every pixel; when we find one that isn't in a blob yet, fill out its whole blob.
+  const seen = new Uint8Array(width * height);
+  for (let start = 0; start < width * height; start++) {
+    if (seen[start] || !solid(start)) continue;
+    const blob = [start];
+    seen[start] = 1;
+    let minX = width, maxX = 0, minY = height, maxY = 0;
+    for (let i = 0; i < blob.length; i++) {
+      const spot = blob[i], x = spot % width, y = (spot - x) / width;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      // Its neighbors (including corners) belong to the same blob.
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = ny * width + nx;
+          if (!seen[next] && solid(next)) { seen[next] = 1; blob.push(next); }
+        }
+      }
+    }
+    // Which box is the middle of this blob in?
+    const column = Math.min(sheet.columns - 1, Math.floor((minX + maxX) / 2 / boxWidth));
+    const row = Math.min(sheet.rows - 1, Math.floor((minY + maxY) / 2 / boxHeight));
+    const frame = frames[row][column];
+    const offsetX = FRAME_PAD - Math.floor(column * boxWidth);
+    const offsetY = FRAME_PAD - Math.floor(row * boxHeight);
+    blob.forEach(spot => {
+      const x = spot % width, y = (spot - x) / width;
+      const fx = x + offsetX, fy = y + offsetY;
+      if (fx < 0 || fy < 0 || fx >= frame.width || fy >= frame.height) return;
+      const to = (fy * frame.width + fx) * 4;
+      for (let k = 0; k < 4; k++) frame.pixels.data[to + k] = pixels.data[spot * 4 + k];
+    });
+  }
+
+  frames.flat().forEach(frame => { frame.getContext("2d").putImageData(frame.pixels, 0, 0); frame.pixels = null; });
+  return frames;
+}
 
 // Draws one frame of a sheet, standing on "bottom", centered on x, this many pixels tall.
 //   show - how much of the frame to show, from the top (0.6 = cut off at 60%, for sitting)
@@ -3741,11 +3815,21 @@ function drawFrame(name, row, column, x, bottom, height, show = 1) {
   const frameWidth = sheet.picture.naturalWidth / sheet.columns;
   const frameHeight = sheet.picture.naturalHeight / sheet.rows;
   const width = height * frameWidth / frameHeight;
+  const scale = height / frameHeight;      // screen pixels per sheet pixel
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(sheet.picture, column * frameWidth, row * frameHeight, frameWidth, frameHeight * show,
-                x - width / 2, bottom - height * show, width, height * show);
+  if (sheet.frames) {
+    // The cut-out frame (with its padding around it). For sitting, only the top part shows.
+    const frame = sheet.frames[row][column];
+    const shownHeight = show >= 1 ? frame.height : FRAME_PAD + frameHeight * show;
+    ctx.drawImage(frame, 0, 0, frame.width, shownHeight,
+                  x - width / 2 - FRAME_PAD * scale, bottom - height * show - FRAME_PAD * scale,
+                  frame.width * scale, shownHeight * scale);
+  } else {
+    ctx.drawImage(sheet.picture, column * frameWidth, row * frameHeight, frameWidth, frameHeight * show,
+                  x - width / 2, bottom - height * show, width, height * show);
+  }
   ctx.restore();
   return { left: x - width / 2, top: bottom - height * show, width, height: height * show };
 }
@@ -7291,6 +7375,13 @@ function nextDatePart() {
   state.datePicking = false;
   saveDateNight({ step: state.dateNight.step + 1 });
 }
+// Back one part (from the first part, back to the start screen). Moves both of you.
+function previousDatePart() {
+  playSound("click");
+  state.datePicking = false;
+  curtainForStep = null;     // so the cinema's curtains open again
+  saveDateNight({ step: Math.max(0, state.dateNight.step - 1) });
+}
 function openSteamPage(name) {
   playSound("click");
   const part = DATE_NIGHT.parts[state.dateNight.step - 1];
@@ -7318,6 +7409,11 @@ function drawDateNight(area, time) {
     else drawGameCard(area, part, step);
   }
   ctx.restore();
+
+  // A Back button in the top right corner, to go back a part (for both of you).
+  if (DATE_NIGHT && state.dateNight.step >= 1 && !state.datePicking) {
+    drawButton(area.right - 42, area.top + 15, 70, 22, "Back", COLORS.white, COLORS.text, previousDatePart);
+  }
 
   // Your side: a Preview button on the start screen, and a reminder while previewing.
   const middle = (area.left + area.right) / 2;
