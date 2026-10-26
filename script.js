@@ -4502,6 +4502,8 @@ async function newTurnGame(kind) {
       turn: ME, winner: null, starter: ME, lastMoveBy: ME,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    // The only Discord ping for these games: when a new game starts.
+    pingOther(`🎮 ${ME} started a game of ${TURN_GAMES[kind].title} with you!`);
   } catch (problem) {
     console.log("Couldn't start the game:", problem);
     showPopup("OOPS", "Couldn't start the game. Try again?");
@@ -4523,13 +4525,8 @@ async function playTurn(kind, spot) {
       board, turn: OTHER, winner, starter: match.starter, lastMoveBy: ME,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
-    const title = TURN_GAMES[kind].title;
-    if (winner === ME) {
-      shareWin(kind);
-      pingOther(`🏆 ${ME} won ${title}! Want a rematch?`);
-    }
-    else if (winner === "draw") pingOther(`🤝 ${title} ended in a tie!`);
-    else pingOther(`🎮 ${ME} made a move in ${title}. It's your turn!`);
+    if (winner === ME) shareWin(kind);
+    // (No Discord ping for each move. The pop-up on the site still shows when it's your turn.)
   } catch (problem) {
     console.log("Couldn't save the move:", problem);
     state.matches[kind] = match;
@@ -4637,6 +4634,7 @@ async function newQuiz() {
       [`answers${RECIPIENT_NAME}`]: null,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    pingOther(`💕 ${ME} started a couples quiz with you!`);
   } catch (problem) {
     console.log("Couldn't start the quiz:", problem);
     showPopup("OOPS", "Couldn't start the quiz. Try again?");
@@ -4649,15 +4647,12 @@ async function pickQuizAnswer(game, name) {
   game.picks = [...(game.picks || []), name];
   if (game.picks.length < 5) return;
   if (blockedInPreview()) { game.picks = []; return; }
-  const theirsDone = state.quiz && state.quiz[`answers${OTHER}`];
   try {
     await database.collection("quiz").doc("current").update({
       [`answers${ME}`]: game.picks,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     playSound("win", 0.5);
-    pingOther(theirsDone ? `💕 ${ME} finished the couples quiz! Come see how you matched!`
-                         : `💕 ${ME} answered the couples quiz. Your turn!`);
   } catch (problem) {
     console.log("Couldn't save the answers:", problem);
     game.picks = [];
