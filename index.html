@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  This is the web version of the date-night invitation.
+  The page is just one big drawing area (a "canvas"). script.js draws everything on it.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MWAHHH</title>
+  <link rel="icon" href="heart.svg">
+  <style>
+    /* Our pixel font, loaded from the fonts folder. */
+    @font-face {
+      font-family: "Pixelify Sans";
+      src: url("fonts/PixelifySans.ttf") format("truetype");
+      font-weight: 400 700;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      /* The same lavender as the wall in the picture, so it all blends together. */
+      background: #CBBED8;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* The drawing is 3 wide for every 2 tall. This makes it as big as fits on the screen. */
+    canvas {
+      width: min(100vw, 150vh);
+      aspect-ratio: 3 / 2;
+      display: block;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="screen" width="1536" height="1024"></canvas>
+  <script src="script.js"></script>
+</body>
+</html>
