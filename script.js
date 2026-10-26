@@ -1532,7 +1532,6 @@ function stepFly(game, area, seconds) {
     if (!wall.passed && wall.x + WALL_WIDTH < planeX) {
       wall.passed = true;
       game.score += 1;
-      playSound("coin", 0.6);
     }
   });
 
