@@ -35,6 +35,7 @@ const GREETING_SUBTITLE = "You have one very important invitation.";
 //     kind    - "game" (a card with how to get the game) or "movie" (the little cinema)
 //     name    - the game or movie
 //     link    - (games) the button that opens the game's page
+//     picture - (games, optional) a banner picture for the game card, in the images folder
 //     steps   - (games) what he should do, one line each
 //     poster  - (movies) the movie's cover picture, in the images folder. If the file
 //               isn't there, a cute pixel poster with the name shows instead.
@@ -53,6 +54,7 @@ const INVITES = [
       {
         kind: "game",
         name: "Unsolved Case",
+        picture: "images/game.png",
         link: "https://store.steampowered.com/search/?term=Unsolved%20Case",
         steps: [
           "Open Steam and download Unsolved Case (the Steam button below finds it)",
@@ -63,7 +65,7 @@ const INVITES = [
       },
       {
         kind: "movie",
-        name: "MOVIE NAME HERE",
+        name: "Corpse Bride",
         poster: "images/movie.png",
         backups: [],
       },
@@ -262,20 +264,24 @@ const CHECK = [
 
 const CONFETTI_COLORS = ["#F07A9C", "#F8BFCB", "#7FB8F0", "#FFE08A", "#C9B6F2", "#FFFFFF"];
 
+// The pixel font for all the words. (It's loaded in index.html, from the fonts folder.
+// To try a different one, change it in both places.)
+const PIXEL_FONT = "'Jersey 10'";
+
 // "bold 43px" = bold, 43 pixels tall.
 const FONTS = {
-  title: "bold 43px 'Pixelify Sans'",
-  body: "19px 'Pixelify Sans'",
-  small: "bold 13px 'Pixelify Sans'",
-  button: "bold 19px 'Pixelify Sans'",
-  letterTitle: "bold 32px 'Pixelify Sans'",
-  letter: "17px 'Pixelify Sans'",
-  suggest: "13px 'Pixelify Sans'",
-  celebrationSubtitle: "27px 'Pixelify Sans'",
-  iconLabel: "bold 11px 'Pixelify Sans'",
-  tag: "bold 10px 'Pixelify Sans'",
-  menu: "bold 14px 'Pixelify Sans'",
-  note: "15px 'Pixelify Sans'",
+  title: `bold 43px ${PIXEL_FONT}`,
+  body: `19px ${PIXEL_FONT}`,
+  small: `bold 13px ${PIXEL_FONT}`,
+  button: `bold 19px ${PIXEL_FONT}`,
+  letterTitle: `bold 32px ${PIXEL_FONT}`,
+  letter: `17px ${PIXEL_FONT}`,
+  suggest: `13px ${PIXEL_FONT}`,
+  celebrationSubtitle: `27px ${PIXEL_FONT}`,
+  iconLabel: `bold 11px ${PIXEL_FONT}`,
+  tag: `bold 10px ${PIXEL_FONT}`,
+  menu: `bold 14px ${PIXEL_FONT}`,
+  note: `15px ${PIXEL_FONT}`,
 };
 
 // The drawing is 768 x 512 (half the size of the background picture).
@@ -893,6 +899,17 @@ function isPast(invite) {
   return invite.date < todayString();
 }
 
+// Has this invite been accepted? (Then it moves into Memories right away.)
+function isAccepted(invite) {
+  if (invite.remote) return invite.remote.status === "accepted";
+  return Boolean(state.accepts[invite.id]) || remembers(`accepted:${invite.id}`);
+}
+
+// Invites in Memories: accepted ones, and ones whose day has passed.
+function isMemory(invite) {
+  return isPast(invite) || isAccepted(invite);
+}
+
 // Is the mouse inside this box?
 function mouseIsIn(box) {
   const { x, y } = state.mouse;
@@ -905,7 +922,7 @@ function drawDesktop(time) {
 
   // Every icon on the desktop: upcoming invites first, then the extras.
   const icons = [
-    ...allInvites().filter(invite => !isPast(invite)).map(inviteIcon),
+    ...allInvites().filter(invite => !isMemory(invite)).map(inviteIcon),
     // Love notes he hasn't read yet (the one he's reading right now stays until he closes it).
     // (Your love notes and "Open when..." letters are for HIM, so they're only on his side.)
     ...(IS_TAYLER ? [] : allLoveNotes().filter(note => !noteIsRead(note) || state.windows.some(win => win.noteId === note.id)).map(note => ({
@@ -928,6 +945,7 @@ function drawDesktop(time) {
   });
 
   drawCats(time);
+  drawStartDateButton(time);
 
   drawAllWindows(time);
   drawTaskbar();
@@ -1749,10 +1767,10 @@ function drawOpenWhen(inside) {
 // A big bold font (40 down to 14) that fits the words in this many pixels.
 function fontThatFitsBig(text, maxWidth) {
   for (let size = 40; size > 14; size -= 2) {
-    ctx.font = `bold ${size}px 'Pixelify Sans'`;
+    ctx.font = `bold ${size}px ${PIXEL_FONT}`;
     if (ctx.measureText(text).width <= maxWidth) return ctx.font;
   }
-  return "bold 14px 'Pixelify Sans'";
+  return "bold 14px " + PIXEL_FONT;
 }
 
 // Is this letter still locked? Letters without "unlocks" are never locked.
@@ -1802,10 +1820,10 @@ canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
 // The biggest bold font (14 down to 9) that fits the words in this many pixels.
 function fontThatFits(text, maxWidth) {
   for (let size = 14; size > 9; size--) {
-    ctx.font = `bold ${size}px 'Pixelify Sans'`;
+    ctx.font = `bold ${size}px ${PIXEL_FONT}`;
     if (ctx.measureText(text).width <= maxWidth) return ctx.font;
   }
-  return "bold 9px 'Pixelify Sans'";
+  return "bold 9px " + PIXEL_FONT;
 }
 
 function flipPage(direction) {
@@ -2068,16 +2086,22 @@ function drawCat(cat, time) {
     }
   }
 
-  let picture = cat.sitting ? CAT_SIT : (Math.floor(time / 200) % 2 ? CAT_WALK_1 : CAT_WALK_2);
-  if (cat.direction < 0) picture = mirror(picture);
   const x = Math.round(cat.x), y = TASKBAR.top - CAT_HEIGHT - 1;
 
-  // An outline (the same picture in one color, nudged one square each way), then the cat itself.
-  const outline = { W: cat.info.outline, S: cat.info.outline, E: cat.info.outline, P: cat.info.outline };
-  [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => {
-    drawSprite(picture, outline, x + dx * CAT_SIZE, y + dy * CAT_SIZE, CAT_SIZE);
-  });
-  drawSprite(picture, cat.info.colors, x, y, CAT_SIZE);
+  // The new cat pictures (if they're there): sitting and blinking, or walking.
+  const sheet = cat.info.name === "orange" ? "orangecat" : "blackcat";
+  const row = cat.sitting ? CAT_ROWS.sit : (cat.direction < 0 ? CAT_ROWS.left : CAT_ROWS.right);
+  const column = cat.sitting ? ((time + cat.info.start * 7) % 3500 < 180 ? 1 : 0) : Math.floor(time / 130) % 4;
+  if (!drawFrame(sheet, row, column, x + CAT_WIDTH / 2, TASKBAR.top + 1, CAT_HEIGHT * 1.9)) {
+    let picture = cat.sitting ? CAT_SIT : (Math.floor(time / 200) % 2 ? CAT_WALK_1 : CAT_WALK_2);
+    if (cat.direction < 0) picture = mirror(picture);
+    // An outline (the same picture in one color, nudged one square each way), then the cat itself.
+    const outline = { W: cat.info.outline, S: cat.info.outline, E: cat.info.outline, P: cat.info.outline };
+    [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => {
+      drawSprite(picture, outline, x + dx * CAT_SIZE, y + dy * CAT_SIZE, CAT_SIZE);
+    });
+    drawSprite(picture, cat.info.colors, x, y, CAT_SIZE);
+  }
 
   // Clicking a cat: it sits, says meow, and a heart pops up.
   hitBoxes.push({ left: x - 2, top: y - 2, right: x + CAT_WIDTH + 2, bottom: y + CAT_HEIGHT + 2, onClick: () => petCat(cat) });
@@ -3386,7 +3410,7 @@ function memorySpot(inside, number) {
 // Invitations: an envelope for every date that's already happened.
 // Memories never say NEW, but keep the check if he accepted.
 function drawMemoryInvites(inside) {
-  const memories = allInvites().filter(isPast);
+  const memories = allInvites().filter(isMemory);
   if (memories.length === 0) {
     drawEmptyFolderMessage(inside, "No past dates yet...", "but not for long!");
     return;
@@ -3685,9 +3709,66 @@ function drawSprite(rows, colors, x, y, size) {
   });
 }
 
-// Draws one of you. who: "jacob" or "tayler". legs: LEGS_STAND, LEGS_STEP_1, or LEGS_STEP_2.
-// At size 2, a person is 24 wide and 32 tall.
-function drawPerson(who, legs, x, y, size) {
+// ---------- The sprite sheets: the pictures of you two and the cats ----------
+//
+// Each sheet is a grid of little pictures ("frames"), all the same size.
+//   You two (4 across, 4 down): each row faces a way (see PERSON_ROWS). Across a row:
+//     standing, standing, stepping, stepping.
+//   The cats (4 across, 6 down): see CAT_ROWS. The "lie" row is: lying down, asleep,
+//     asleep, stretching.
+// If a sheet is missing, the old little pixel versions show instead.
+const SPRITE_SHEETS = {
+  tayler: { src: "images/people/tayler.png", columns: 4, rows: 4 },
+  jacob: { src: "images/people/jacob.png", columns: 4, rows: 4 },
+  orangecat: { src: "images/cats/orange.png", columns: 4, rows: 6 },
+  blackcat: { src: "images/cats/black.png", columns: 4, rows: 6 },
+};
+const PERSON_ROWS = { down: 0, left: 1, right: 2, up: 3 };
+const CAT_ROWS = { sit: 0, left: 1, right: 2, down: 3, up: 4, lie: 5 };
+
+Object.values(SPRITE_SHEETS).forEach(sheet => {
+  sheet.picture = new Image();
+  sheet.picture.onload = () => { sheet.ready = true; };
+  sheet.picture.src = sheet.src;
+});
+
+// Draws one frame of a sheet, standing on "bottom", centered on x, this many pixels tall.
+//   show - how much of the frame to show, from the top (0.6 = cut off at 60%, for sitting)
+// Gives back where it was drawn { left, top, width, height }, or null if the sheet isn't loaded.
+function drawFrame(name, row, column, x, bottom, height, show = 1) {
+  const sheet = SPRITE_SHEETS[name];
+  if (!sheet || !sheet.ready) return null;
+  const frameWidth = sheet.picture.naturalWidth / sheet.columns;
+  const frameHeight = sheet.picture.naturalHeight / sheet.rows;
+  const width = height * frameWidth / frameHeight;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(sheet.picture, column * frameWidth, row * frameHeight, frameWidth, frameHeight * show,
+                x - width / 2, bottom - height * show, width, height * show);
+  ctx.restore();
+  return { left: x - width / 2, top: bottom - height * show, width, height: height * show };
+}
+
+// The old little pixel cat (for when a cat's sheet isn't there).
+function drawPixelCat(cat, stepping, faceLeft, x, bottom, height) {
+  let picture = stepping ? CAT_WALK_2 : CAT_SIT;
+  if (faceLeft) picture = mirror(picture);
+  const px = height / picture.length;
+  const left = x - (picture[0].length * px) / 2, top = bottom - height;
+  const outline = { W: cat.outline, S: cat.outline, E: cat.outline, P: cat.outline };
+  [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => drawSpriteScaled(picture, outline, left + dx * px, top + dy * px, px));
+  drawSpriteScaled(picture, cat.colors, left, top, px);
+  return { left, top, width: picture[0].length * px, height };
+}
+
+// Draws one of you in the games. who: "jacob" or "tayler". legs: LEGS_STAND (standing),
+// LEGS_STEP_1 or LEGS_STEP_2 (walking/running). facing: "down", "left", "right", or "up".
+// At size 2, a person fits in a box 24 wide and 32 tall (feet at the bottom of it).
+function drawPerson(who, legs, x, y, size, facing = "down") {
+  const column = legs === LEGS_STEP_1 ? 2 : legs === LEGS_STEP_2 ? 3 : 0;
+  // A little taller than the box, since the new pictures have big hair.
+  if (drawFrame(who, PERSON_ROWS[facing], column, x + 6 * size, y + 16 * size, 21 * size)) return;
   const top = who === "jacob" ? JACOB_TOP : TAYLER_TOP;
   const colors = who === "jacob" ? JACOB_COLORS : TAYLER_COLORS;
   drawSprite([...top, ...legs], colors, x, y, size);
@@ -4029,11 +4110,11 @@ function stepRun(game, area, seconds) {
   const playerY = ground - 32 - game.height;
   let legs = Math.floor(game.distance / 22) % 2 ? LEGS_STEP_1 : LEGS_STAND;
   if (game.height > 0) legs = LEGS_STEP_2;
-  drawPerson("jacob", legs, playerX, playerY, 2);
+  drawPerson("jacob", legs, playerX, playerY, 2, "right");
 
   // You, waiting for him at the end!
   const almostThere = game.distance - (RUN_FINISH - 300);
-  if (almostThere > 0) drawPerson("tayler", LEGS_STAND, playerX + 30 + (300 - almostThere), ground - 32, 2);
+  if (almostThere > 0) drawPerson("tayler", LEGS_STAND, playerX + 30 + (300 - almostThere), ground - 32, 2, "left");
 
   // The obstacles, and did he bump into one?
   const player = { left: playerX + 5, right: playerX + 19, top: playerY + 4, bottom: playerY + 32 };
@@ -4077,7 +4158,9 @@ function stepCatch(game, area, seconds) {
 
   // You walk back and forth along the top.
   const taylerX = middle - 12 + Math.sin(game.clock * 1.3) * (area.right - area.left - 70) / 2;
-  drawPerson("tayler", Math.floor(game.clock * 6) % 2 ? LEGS_STEP_1 : LEGS_STAND, taylerX, area.top + 22, 2);
+  // (Facing whichever way you're walking.)
+  const taylerFacing = Math.cos(game.clock * 1.3) > 0 ? "right" : "left";
+  drawPerson("tayler", Math.floor(game.clock * 6) % 2 ? LEGS_STEP_1 : LEGS_STEP_2, taylerX, area.top + 22, 2, taylerFacing);
 
   // You drop a heart every so often. The more he catches, the faster they come.
   game.nextHeart -= seconds;
@@ -4089,7 +4172,15 @@ function stepCatch(game, area, seconds) {
   // He follows the mouse along the bottom (his legs move while he's walking).
   // (While paused, he stays put.)
   const target = game.paused ? game.x : keepBetween(state.mouse.x - 12, area.left + 2, area.right - 26);
-  if (Math.abs(target - game.x) > 1) game.walking += seconds;
+  if (Math.abs(target - game.x) > 1) {
+    game.walking += seconds;
+    game.facing = target < game.x ? "left" : "right";
+    game.stoppedFor = 0;
+  } else {
+    // Stood still for a moment? Turn to face us again.
+    game.stoppedFor = (game.stoppedFor || 0) + seconds;
+    if (game.stoppedFor > 0.25) game.facing = "down";
+  }
   game.x = target;
   const playerY = area.bottom - 34;
 
@@ -4110,7 +4201,9 @@ function stepCatch(game, area, seconds) {
   game.hearts = game.hearts.filter(heart => !heart.gone);
 
   game.hearts.forEach(heart => drawPixels(HEART, heart.x, heart.y, 2, COLORS.heart));
-  drawPerson("jacob", Math.floor(game.walking * 8) % 2 ? LEGS_STEP_1 : LEGS_STAND, game.x, playerY, 2);
+  const moving = game.facing && game.facing !== "down";
+  drawPerson("jacob", moving ? (Math.floor(game.walking * 8) % 2 ? LEGS_STEP_1 : LEGS_STEP_2) : LEGS_STAND,
+             game.x, playerY, 2, game.facing || "down");
 
   // The score, and his lives as little hearts (gray once they're lost).
   write(`Hearts: ${game.score}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
@@ -4518,202 +4611,48 @@ function stepBreakout(game, area, seconds) {
 // How many coins the house starts with, so you can buy something right away.
 const STARTING_COINS = 100;
 
-// The room is a grid: 8 tiles across, 4 rows of floor, and a wall 2.5 tiles tall.
-const HOUSE_COLUMNS = 8;
-const HOUSE_ROWS = 4;
-const HOUSE_WALL = 2.5;
-const HOUSE_SIDEBAR = 118;   // how wide the shop is
+// How the room is laid out. There's no grid: furniture goes anywhere you drop it.
+const HOUSE_WALL = 0.4;        // how much of the room's height is wall (the rest is floor)
+const HOUSE_SIDEBAR = 118;     // how wide the shop is
+// How big the furniture pictures are drawn. Bigger number = bigger furniture.
+const HOUSE_ART_SIZE = 1;
 
-// The colors the furniture pictures use (each letter is one color).
+// The colors for the little house icon (each letter is one color).
 const FURNITURE_COLORS = {
   O: "#45284A", W: "#FFFFFF", C: "#FFF4EA", P: "#F8A5BE", p: "#E07A9A", B: "#BBE1FD", b: "#7FB8F0",
   L: "#C9B6F2", l: "#9D86D6", G: "#7CC27A", g: "#5E9E5A", Y: "#FFE08A", y: "#F2B33D",
   T: "#E3B07A", t: "#B07A52", K: "#3A3440", k: "#8C8A99", R: "#E05A6B",
 };
 
-// Every kind of furniture. Each tile of the room is 8 pixels of a picture.
-//   w, d   - how many tiles wide, and how many floor rows deep, it takes up
-//   wall   - it hangs on the wall instead of sitting on the floor (wallY = how far down the wall)
-//   price  - 0 means it can't be bought (you two and the cats)
+// Every kind of furniture. Each one's picture is images/furniture/<its name>.png.
+//   name   - what the shop calls it
+//   price  - how many coins it costs
+//   size   - how big it's drawn (1 = normal, 0.8 = a bit smaller)
+//   wall   - it hangs on the wall instead of sitting on the floor
+//   rug    - it lies flat on the floor (everything walks on top of it)
+// TO ADD MORE: put the picture in images/furniture, then add a line here with the same name.
 const FURNITURE = {
-  bed: { name: "Bed", price: 80, w: 2, d: 2, rows: [
-    ".OOOOOOOOOOOOOO.",
-    "OttttttttttttttO",
-    "OtOOOOOOOOOOOOtO",
-    "OtOWWWWWOWWWWWtO",
-    "OtOWWWWWOWWWWWtO",
-    "OtOOOOOOOOOOOOtO",
-    "OtOPPPPPPPPPPOtO",
-    "OtOPpPPPPPPpPOtO",
-    "OtOPPPPPPPPPPOtO",
-    "OtOPPPPpPPPPPOtO",
-    "OtOPPPPPPPPPPOtO",
-    "OtOPpPPPPPPpPOtO",
-    "OtOOOOOOOOOOOOtO",
-    "OttttttttttttttO",
-    "OOOOOOOOOOOOOOOO",
-    ".O............O.",
-  ] },
-  couch: { name: "Couch", price: 70, w: 3, d: 1, rows: [
-    "..OOOOOOOOOOOOOOOOOOOO..",
-    ".OllllllllllllllllllllO.",
-    ".OllllllllllllllllllllO.",
-    "OOOOOOOOOOOOOOOOOOOOOOOO",
-    "OlOLLLLLLLLOOLLLLLLLLOlO",
-    "OlOLLLLLLLLOOLLLLLLLLOlO",
-    "OlOOOOOOOOOOOOOOOOOOOOlO",
-    "OllllllllllllllllllllllO",
-    "OOOOOOOOOOOOOOOOOOOOOOOO",
-    ".O....................O.",
-  ] },
-  table: { name: "Table", price: 40, w: 2, d: 1, rows: [
-    "...OO.......O...",
-    "..OWWO.....OPO..",
-    "..OWWO.....OPO..",
-    "OOOOOOOOOOOOOOOO",
-    "OTTTTTTTTTTTTTTO",
-    "OOOOOOOOOOOOOOOO",
-    ".Ot..........tO.",
-    ".Ot..........tO.",
-    ".OO..........OO.",
-  ] },
-  desk: { name: "Computer desk", price: 70, w: 2, d: 1, rows: [
-    "..OOOOOO........",
-    "..OBBBBO........",
-    "..OBbBBO........",
-    "..OOOOOO....OO..",
-    "....OO.....OYYO.",
-    "OOOOOOOOOOOOOOOO",
-    "OTTTTTTTTTTTTTTO",
-    "OOOOOOOOOOOOOOOO",
-    ".Ot..........tO.",
-    ".Ot..........tO.",
-    ".OO..........OO.",
-  ] },
-  tv: { name: "TV", price: 90, w: 2, d: 1, rows: [
-    "....O......O....",
-    ".....O....O.....",
-    "OOOOOOOOOOOOOOOO",
-    "OKKKKKKKKKKKKKKO",
-    "OKbbbbbbbbbbbbKO",
-    "OKbBBbbbbbbbbbKO",
-    "OKbbbbbbpPbbbbKO",
-    "OKbbbbbbPPbbbbKO",
-    "OKbbbbbbbbbbbbKO",
-    "OKKKKKKKKKKKKKKO",
-    "OOOOOOOOOOOOOOOO",
-    "OttttttttttttttO",
-    "OOOOOOOOOOOOOOOO",
-    ".O............O.",
-  ] },
-  bookshelf: { name: "Bookshelf", price: 60, w: 2, d: 1, rows: [
-    "OOOOOOOOOOOOOOOO",
-    "OttttttttttttttO",
-    "OtPbYlRbPYGlbRtO",
-    "OtPbYlRbPYGlbRtO",
-    "OtPbYlRbPYGlbRtO",
-    "OttttttttttttttO",
-    "OtGlbPRYbPlYGbtO",
-    "OtGlbPRYbPlYGbtO",
-    "OtGlbPRYbPlYGbtO",
-    "OttttttttttttttO",
-    "OtYRbPlGYbPRlGtO",
-    "OtYRbPlGYbPRlGtO",
-    "OtYRbPlGYbPRlGtO",
-    "OttttttttttttttO",
-    "OOOOOOOOOOOOOOOO",
-  ] },
-  lamp: { name: "Lamp", price: 25, w: 1, d: 1, rows: [
-    "..OOOO..",
-    ".OYYYYO.",
-    ".OYYYYO.",
-    "OYYYYYYO",
-    "OOOOOOOO",
-    "...OO...",
-    "...OO...",
-    "...OO...",
-    "...OO...",
-    "...OO...",
-    "..OOOO..",
-    ".OkkkkO.",
-    ".OOOOOO.",
-  ] },
-  plant: { name: "Plant", price: 20, w: 1, d: 1, rows: [
-    "..G..G..",
-    ".GgG.Gg.",
-    "GgGGGgGG",
-    ".GGgGGg.",
-    "..GGgG..",
-    "...gG...",
-    ".OOOOOO.",
-    ".OppppO.",
-    ".OPPPPO.",
-    "..OPPO..",
-    "..OOOO..",
-  ] },
-  beanbag: { name: "Beanbag", price: 25, w: 1, d: 1, rows: [
-    "..OOOO..",
-    ".ObbbbO.",
-    "ObBbbbbO",
-    "ObbbbbbO",
-    "ObbbbbbO",
-    ".OOOOOO.",
-  ] },
-  catbed: { name: "Cat bed", price: 20, w: 1, d: 1, rows: [
-    ".OOOOOO.",
-    "OPPPPPPO",
-    "OPWWWWPO",
-    "OPPPPPPO",
-    ".OOOOOO.",
-  ] },
-  rug: { name: "Rug", price: 35, w: 3, d: 2, rug: true },
-  window: { name: "Window", price: 50, w: 2, wall: true, wallY: 0.45, rows: [
-    "OOOOOOOOOOOOOOOO",
-    "OBBBBBBOOBBBBBBO",
-    "OBWBBBBOOBBWBBBO",
-    "OBBBBBBOOBBBBBBO",
-    "OBBBBBBOOBBBBBBO",
-    "OOOOOOOOOOOOOOOO",
-    "OBBBBBBOOBBBBBBO",
-    "OBBBBBBOOBBBBBBO",
-    "OBBBBBBOOBBBBBBO",
-    "OOOOOOOOOOOOOOOO",
-    "OttttttttttttttO",
-    "OOOOOOOOOOOOOOOO",
-  ] },
-  poster: { name: "Heart poster", price: 15, w: 1, wall: true, wallY: 0.5, rows: [
-    "OOOOOOOO",
-    "OCCCCCCO",
-    "OCPPCPPO",
-    "OCPPPPPO",
-    "OCCPPPCO",
-    "OCCCPCCO",
-    "OCCCCCCO",
-    "OOOOOOOO",
-  ] },
-  clock: { name: "Clock", price: 20, w: 1, wall: true, wallY: 0.45, rows: [
-    "..OOOO..",
-    ".OWWWWO.",
-    "OWWOWWWO",
-    "OWWOWWWO",
-    "OWWOOOWO",
-    "OWWWWWWO",
-    ".OWWWWO.",
-    "..OOOO..",
-  ] },
-  lights: { name: "Fairy lights", price: 30, w: 3, wall: true, wallY: 0.12, rows: [
-    "OO....OO....OO....OO....",
-    "..OOOO..OOOO..OOOO..OOOO",
-    "...Y.....P.....b.....G..",
-    "...Y.....P.....b.....G..",
-  ] },
-  // You two and the cats (free, and already in the house).
-  // (scale shrinks them a bit, so they're the right size next to the furniture.)
-  tayler: { name: YOUR_NAME, price: 0, w: 1, d: 1, person: "tayler", scale: 0.7 },
-  jacob: { name: RECIPIENT_NAME, price: 0, w: 1, d: 1, person: "jacob", scale: 0.7 },
-  orangecat: { name: "Orange cat", price: 0, w: 1, d: 1, cat: 0, scale: 0.5 },
-  blackcat: { name: "Black cat", price: 0, w: 1, d: 1, cat: 1, scale: 0.5 },
+  bed: { name: "Bed", price: 80, size: 1 },
+  couch: { name: "Couch", price: 70, size: 1 },
+  desk: { name: "Computer desk", price: 70, size: 1 },
+  tv: { name: "TV", price: 90, size: 0.9 },
+  bookshelf: { name: "Bookshelf", price: 60, size: 1 },
+  table: { name: "Coffee table", price: 40, size: 0.8 },
+  lamp: { name: "Lamp", price: 25, size: 0.85 },
+  plant: { name: "Plant", price: 20, size: 0.75 },
+  rug: { name: "Rug", price: 35, size: 1.1, rug: true },
+  window: { name: "Window", price: 50, size: 0.85, wall: true },
+  shelf: { name: "Wall shelf", price: 30, size: 0.75, wall: true },
+  poster: { name: "Heart picture", price: 15, size: 0.55, wall: true },
 };
+
+// Load every furniture picture.
+const FURNITURE_PICTURES = {};
+Object.keys(FURNITURE).forEach(type => {
+  const picture = new Image();
+  picture.src = `images/furniture/${type}.png`;
+  FURNITURE_PICTURES[type] = picture;
+});
 
 const WALLPAPERS = {
   pink: { name: "Pink stripes", price: 0, colors: ["#F8D9E2", "#F4C6D3"], pattern: "stripes" },
@@ -4739,13 +4678,9 @@ const COIN = [
 ];
 const COIN_COLORS = { O: "#B07A1E", Y: "#FFD45E", W: "#FFFFFF" };
 
-// What a brand new house has in it.
-const START_ITEMS = [
-  { id: "tayler", type: "tayler", gx: 2, gy: 2, flip: false, placed: true },
-  { id: "jacob", type: "jacob", gx: 3, gy: 2, flip: true, placed: true },
-  { id: "orangecat", type: "orangecat", gx: 5, gy: 3, flip: false, placed: true },
-  { id: "blackcat", type: "blackcat", gx: 6, gy: 3, flip: true, placed: true },
-];
+// A brand new house starts empty (you two and the cats live there on their own, see
+// "YOU TWO AND THE CATS" below).
+const START_ITEMS = [];
 
 state.house = null;     // the house, from Firebase
 let houseLayout = null; // where the room and shop were drawn (for dragging)
@@ -4812,37 +4747,64 @@ function addCoins(amount) {
 
 
 // ---------- Where things go ----------
+//
+// Each piece of furniture remembers where it is as two numbers from 0 to 1:
+//   x - left to right across the room (0.5 = the middle)
+//   y - for floor things, how far toward the front its bottom edge is (0 = against the
+//       wall, 1 = the very front). For wall things, how far down the wall it hangs.
 
-// The spots a piece of furniture takes up (floor rows), for checking if things overlap.
-function footprint(item, gx = item.gx, gy = item.gy) {
-  const kind = FURNITURE[item.type];
-  return { left: gx, right: gx + kind.w, top: kind.wall ? 0 : gy, bottom: kind.wall ? 1 : gy + kind.d };
+// Old houses were saved on a grid. This turns a grid spot into the new kind of spot.
+const OLD_GRID_SIZES = {
+  bed: [2, 2], couch: [3, 1], table: [2, 1], desk: [2, 1], tv: [2, 1], bookshelf: [2, 1],
+  lamp: [1, 1], plant: [1, 1], rug: [3, 2], window: [2, 0], poster: [1, 0],
+};
+function itemSpot(item) {
+  if (typeof item.x === "number") return { x: item.x, y: item.y };
+  const [wide, deep] = OLD_GRID_SIZES[item.type] || [1, 1];
+  return { x: ((item.gx || 0) + wide / 2) / 8, y: FURNITURE[item.type].wall ? 0.5 : ((item.gy || 0) + deep) / 4 };
 }
 
-// Can this go here without bumping into something? (Rugs only bump into other rugs,
-// and wall things only bump into other wall things.)
-function spotIsFree(item, gx, gy, items = state.house.items) {
-  const kind = FURNITURE[item.type];
-  if (gx < 0 || gx + kind.w > HOUSE_COLUMNS) return false;
-  if (!kind.wall && (gy < 0 || gy + kind.d > HOUSE_ROWS)) return false;
-  const mine = footprint(item, gx, gy);
-  return !items.some(other => {
-    if (other.id === item.id || !other.placed) return false;
-    const otherKind = FURNITURE[other.type];
-    if (!!otherKind.wall !== !!kind.wall || !!otherKind.rug !== !!kind.rug) return false;
-    const theirs = footprint(other);
-    return mine.left < theirs.right && theirs.left < mine.right && mine.top < theirs.bottom && theirs.top < mine.bottom;
-  });
+// A spot for something new: somewhere near the middle, a little random so things don't
+// all land on top of each other.
+function newSpot(type) {
+  const kind = FURNITURE[type];
+  if (kind.wall) return { x: between(0.2, 0.8, Math.random()), y: 0.45 };
+  if (kind.rug) return { x: 0.5, y: 0.85 };
+  return { x: between(0.2, 0.8, Math.random()), y: between(0.45, 0.9, Math.random()) };
 }
 
-// The first free spot for a piece of furniture (or null if the room is full).
-function findFreeSpot(item, items) {
-  for (let gy = 0; gy < HOUSE_ROWS; gy++) {
-    for (let gx = 0; gx < HOUSE_COLUMNS; gx++) {
-      if (spotIsFree(item, gx, gy, items)) return { gx, gy };
-    }
+// How big a piece of furniture is drawn, in screen pixels.
+function furnitureSize(type, art) {
+  const picture = FURNITURE_PICTURES[type];
+  const scale = art * (FURNITURE[type].size || 1);
+  if (!picture.naturalWidth) return { width: 60 * scale, height: 60 * scale };   // still loading
+  return { width: picture.naturalWidth * scale, height: picture.naturalHeight * scale };
+}
+
+// Keeps a spot inside the room: not hanging off the sides, wall things on the wall, and
+// floor things standing on the floor.
+function clampSpot(item, spot, layout) {
+  const kind = FURNITURE[item.type];
+  const { width, height } = furnitureSize(item.type, layout.art);
+  const half = Math.min(0.5, width / 2 / layout.roomWidth);
+  const x = keepBetween(spot.x, half, 1 - half);
+  if (kind.wall) {
+    const halfHeight = Math.min(0.5, height / 2 / layout.wallHeight);
+    return { x, y: keepBetween(spot.y, halfHeight, 1 - halfHeight) };
   }
-  return null;
+  // Rugs stay all on the floor. Tall things can stick up in front of the wall.
+  const highest = kind.rug ? height / layout.floorHeight : Math.max(0.06, (height - layout.wallHeight) / layout.floorHeight);
+  return { x, y: keepBetween(spot.y, Math.min(highest, 1), 1) };
+}
+
+// Where a piece of furniture is drawn: { left, top, width, height } on the screen.
+function furnitureBox(item, layout, spot) {
+  const kind = FURNITURE[item.type];
+  const { width, height } = furnitureSize(item.type, layout.art);
+  const middle = layout.left + spot.x * layout.roomWidth;
+  if (kind.wall) return { left: middle - width / 2, top: layout.wallTop + spot.y * layout.wallHeight - height / 2, width, height };
+  const bottom = layout.floorTop + spot.y * layout.floorHeight;
+  return { left: middle - width / 2, top: bottom - height, width, height };
 }
 
 
@@ -4862,41 +4824,22 @@ function drawSpriteScaled(rows, colors, x, y, px) {
   });
 }
 
-// The picture for a piece of furniture: { rows, colors, outline (for cats) }.
-function furniturePicture(type, flip) {
-  const kind = FURNITURE[type];
-  let rows, colors = FURNITURE_COLORS, outline = null;
-  if (kind.person) {
-    rows = [...(kind.person === "jacob" ? JACOB_TOP : TAYLER_TOP), ...LEGS_STAND];
-    colors = kind.person === "jacob" ? JACOB_COLORS : TAYLER_COLORS;
-  } else if (kind.cat !== undefined) {
-    rows = CAT_SIT;
-    colors = CATS[kind.cat].colors;
-    outline = CATS[kind.cat].outline;
+// Draws a furniture picture in a box (flipped means facing the other way).
+function drawFurniturePicture(type, box, flip) {
+  const picture = FURNITURE_PICTURES[type];
+  if (!picture.naturalWidth) return;
+  ctx.save();
+  // These pictures are big and get shrunk down, so smoothing makes them look neat.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (flip) {
+    ctx.translate(box.left + box.width, box.top);
+    ctx.scale(-1, 1);
+    ctx.drawImage(picture, 0, 0, box.width, box.height);
   } else {
-    rows = kind.rows;
+    ctx.drawImage(picture, box.left, box.top, box.width, box.height);
   }
-  return { rows: flip ? mirror(rows) : rows, colors, outline };
-}
-
-// Draws one piece of furniture with its top-left corner at (x, y).
-function drawFurniture(type, x, y, px, flip) {
-  const { rows, colors, outline } = furniturePicture(type, flip);
-  if (outline) {
-    const outlineColors = Object.fromEntries(Object.keys(colors).map(letter => [letter, outline]));
-    [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => drawSpriteScaled(rows, outlineColors, x + dx * px, y + dy * px, px));
-  }
-  drawSpriteScaled(rows, colors, x, y, px);
-}
-
-// A rug: a soft pink rounded rectangle with a white stitched edge.
-function drawRug(left, top, width, height) {
-  steppedBox(left + 2, top + 2, left + width - 2, top + height - 2, 4, "#F8BFCB", COLORS.text, 2);
-  ctx.strokeStyle = COLORS.white;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
-  ctx.strokeRect(left + 7, top + 7, width - 14, height - 14);
-  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 // Fills a box with a wallpaper or floor pattern.
@@ -4939,21 +4882,6 @@ function fillPattern(look, x, y, width, height, unit) {
   ctx.restore();
 }
 
-// Where a piece of furniture is drawn: { left, top, width, height } on the screen.
-function furnitureBox(item, layout, gx = item.gx, gy = item.gy) {
-  const kind = FURNITURE[item.type];
-  const { left, wallTop, wallHeight, floorTop, tile, tileHeight, px } = layout;
-  if (kind.rug) {
-    return { left: left + gx * tile, top: floorTop + gy * tileHeight, width: kind.w * tile, height: kind.d * tileHeight };
-  }
-  const { rows } = furniturePicture(item.type, false);
-  const scaled = px * (kind.scale || 1);
-  const width = rows[0].length * scaled, height = rows.length * scaled;
-  const x = left + gx * tile + (kind.w * tile - width) / 2;
-  if (kind.wall) return { left: x, top: wallTop + wallHeight * kind.wallY - height / 2, width, height };
-  return { left: x, top: floorTop + (gy + kind.d) * tileHeight - height, width, height };
-}
-
 // The whole house window: the room on the left, the shop on the right.
 function drawHouse(inside, time) {
   if (state.online !== "ok") {
@@ -4966,84 +4894,69 @@ function drawHouse(inside, time) {
   }
   const house = state.house;
 
-  // Work out the room's size: as big as fits next to the shop.
+  // The room fills everything left of the shop: wall on top, floor below.
   const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - HOUSE_SIDEBAR - 8, bottom: inside.bottom - 6 };
-  const tile = Math.floor(Math.min((space.right - space.left) / HOUSE_COLUMNS,
-                                   (space.bottom - space.top) / (HOUSE_WALL + HOUSE_ROWS * 0.75)));
-  const tileHeight = tile * 0.75;
-  const roomWidth = tile * HOUSE_COLUMNS;
-  const left = space.left + Math.floor((space.right - space.left - roomWidth) / 2);
-  const wallTop = space.top, wallHeight = tile * HOUSE_WALL;
-  const floorTop = wallTop + wallHeight, floorHeight = tileHeight * HOUSE_ROWS;
+  const roomWidth = space.right - space.left, roomHeight = space.bottom - space.top;
+  const wallHeight = Math.round(roomHeight * HOUSE_WALL);
   const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
-  const layout = houseLayout = { left, wallTop, wallHeight, floorTop, tile, tileHeight, px: tile / 8, roomWidth, floorHeight, sidebar };
+  const layout = houseLayout = {
+    left: space.left, wallTop: space.top, wallHeight, floorTop: space.top + wallHeight,
+    floorHeight: roomHeight - wallHeight, roomWidth, sidebar,
+    // How much the pictures are shrunk, so everything fits this room's size.
+    art: roomWidth / 560 * HOUSE_ART_SIZE,
+  };
 
   // The wall and floor.
-  fillPattern(WALLPAPERS[house.wallpaper] || WALLPAPERS.pink, left, wallTop, roomWidth, wallHeight, tile / 2);
-  fillPattern(FLOORS[house.floor] || FLOORS.wood, left, floorTop, roomWidth, floorHeight, tile);
+  const tile = roomWidth / 9;
+  fillPattern(WALLPAPERS[house.wallpaper] || WALLPAPERS.pink, layout.left, layout.wallTop, roomWidth, wallHeight, tile / 2);
+  fillPattern(FLOORS[house.floor] || FLOORS.wood, layout.left, layout.floorTop, roomWidth, layout.floorHeight, tile);
   ctx.fillStyle = "#B07A52";                                  // the baseboard
-  ctx.fillRect(left, floorTop - 3, roomWidth, 4);
-  ctx.strokeStyle = COLORS.text;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(left, wallTop, roomWidth, wallHeight + floorHeight);
+  ctx.fillRect(layout.left, layout.floorTop - 3, roomWidth, 4);
 
-  // While dragging, a faint grid on the floor shows where things can go.
-  if (houseDrag && houseDrag.moved) {
-    ctx.strokeStyle = "rgba(69, 40, 74, 0.15)";
-    ctx.lineWidth = 1;
-    for (let column = 1; column < HOUSE_COLUMNS; column++) {
-      ctx.beginPath();
-      ctx.moveTo(left + column * tile, floorTop);
-      ctx.lineTo(left + column * tile, floorTop + floorHeight);
-      ctx.stroke();
-    }
-    for (let row = 1; row < HOUSE_ROWS; row++) {
-      ctx.beginPath();
-      ctx.moveTo(left, floorTop + row * tileHeight);
-      ctx.lineTo(left + roomWidth, floorTop + row * tileHeight);
-      ctx.stroke();
-    }
-  }
-
-  // The furniture: rugs first, then wall things, then the rest from back to front.
-  const placed = house.items.filter(item => item.placed && FURNITURE[item.type]);
-  const order = item => {
-    const kind = FURNITURE[item.type];
-    if (kind.rug) return -100 + item.gy;
-    if (kind.wall) return -50;
-    return item.gy + kind.d + item.gx / 100;
-  };
   ctx.save();
   ctx.beginPath();
-  ctx.rect(left, wallTop, roomWidth, wallHeight + floorHeight);
+  ctx.rect(layout.left, layout.wallTop, roomWidth, roomHeight);
   ctx.clip();
-  placed.slice().sort((a, b) => order(a) - order(b)).forEach(item => {
-    const dragging = houseDrag && houseDrag.item.id === item.id && houseDrag.moved;
-    if (dragging) return;   // drawn last, on top (below)
-    const box = furnitureBox(item, layout);
-    if (FURNITURE[item.type].rug) drawRug(box.left, box.top, box.width, box.height);
-    else drawFurniture(item.type, box.left, box.top, layout.px * (FURNITURE[item.type].scale || 1), item.flip);
-    hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
-                    houseItem: item, onClick: () => {} });
+
+  // Where each piece of furniture is this frame (the one being dragged follows the mouse).
+  const placed = house.items.filter(item => item.placed && FURNITURE[item.type]);
+  const dragId = houseDrag && houseDrag.moved ? houseDrag.item.id : null;
+  const boxes = {};
+  placed.forEach(item => {
+    const spot = item.id === dragId ? houseDrag.spot : clampSpot(item, itemSpot(item), layout);
+    boxes[item.id] = furnitureBox(item, layout, spot);
   });
 
-  // The piece being dragged, where it would land (with a red outline if it doesn't fit).
-  if (houseDrag && houseDrag.moved) {
-    const { item, gx, gy } = houseDrag;
-    const box = furnitureBox(item, layout, gx, gy);
-    ctx.globalAlpha = 0.75;
-    if (FURNITURE[item.type].rug) drawRug(box.left, box.top, box.width, box.height);
-    else drawFurniture(item.type, box.left, box.top, layout.px * (FURNITURE[item.type].scale || 1), item.flip);
-    ctx.globalAlpha = 1;
-    if (!houseDrag.overShop && !spotIsFree(item, gx, gy)) {
-      ctx.strokeStyle = COLORS.newTag;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(box.left, box.top, box.width, box.height);
-    }
-  }
+  // You two and the cats decide what to do next, and move a little.
+  updateFolks(layout, placed, boxes, time);
+
+  // Draw everything from back to front: rugs, then wall things, then furniture and
+  // people in order of how far forward they are (so things in front cover things behind).
+  const drawables = placed.map(item => {
+    const kind = FURNITURE[item.type], box = boxes[item.id];
+    const depth = kind.rug ? -2000 + box.top + box.height : kind.wall ? -1000 : box.top + box.height;
+    return { depth, draw: () => drawHouseItem(item, box, item.id === dragId) };
+  });
+  state.folks.forEach(folk => drawables.push({ depth: folkDepth(folk, layout, boxes), draw: () => drawFolk(folk, layout, boxes, time) }));
+  drawables.sort((a, b) => a.depth - b.depth).forEach(thing => thing.draw());
   ctx.restore();
 
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(layout.left, layout.wallTop, roomWidth, roomHeight);
+
   drawHouseShop(house, sidebar);
+}
+
+// One piece of furniture (see-through while it's being dragged), and its click spot.
+function drawHouseItem(item, box, dragging) {
+  if (dragging) ctx.globalAlpha = 0.8;
+  drawFurniturePicture(item.type, box, item.flip);
+  ctx.globalAlpha = 1;
+  if (!dragging) {
+    hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
+                    houseItem: item, onClick: () => {} });
+  }
 }
 
 // The shop on the right: coins, two tabs (Shop and Mine), and cards for each thing.
@@ -5067,7 +4980,7 @@ function drawHouseShop(house, sidebar) {
     hitBoxes.push(box);
     steppedBox(box.left, box.top, box.right, box.bottom, 2,
                state.houseTab === tab ? COLORS.acceptFill : COLORS.white, COLORS.text, 1.5);
-    write(tab === "shop" ? "Shop" : "Mine", (box.left + box.right) / 2, box.top + 9.5, FONTS.tag,
+    write(tab === "shop" ? "Shop" : "Mine", (box.left + box.right) / 2, box.top + 9.5, FONTS.small,
           state.houseTab === tab ? COLORS.white : COLORS.text);
   });
 
@@ -5080,13 +4993,13 @@ function drawHouseShop(house, sidebar) {
   // The cards: everything you can buy, or everything you have put away.
   const cards = state.houseTab === "shop" ? shopCards(house) : mineCards(house);
   const list = { left: sidebar.left + 4, top: sidebar.top + 48, right: sidebar.right - 4, bottom: sidebar.bottom - 20 };
-  const cardWidth = (list.right - list.left - 6) / 2, cardHeight = 46;
+  const cardWidth = (list.right - list.left - 6) / 2, cardHeight = 54;
   const contentHeight = Math.ceil(cards.length / 2) * (cardHeight + 4);
   state.houseMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
   state.houseScroll = keepBetween(state.houseScroll || 0, 0, state.houseMaxScroll);
 
   if (cards.length === 0) {
-    write(state.houseTab === "shop" ? "You bought it all!" : "Nothing put away", middle, list.top + 30, FONTS.tag, COLORS.text);
+    write(state.houseTab === "shop" ? "You bought it all!" : "Nothing put away", middle, list.top + 30, FONTS.small, COLORS.text);
   }
   ctx.save();
   ctx.beginPath();
@@ -5103,10 +5016,10 @@ function drawHouseShop(house, sidebar) {
     }
     steppedBox(x, y, x + cardWidth, y + cardHeight, 2,
                card.current ? COLORS.iconHover : (state.hoverId === id ? COLORS.titleBar : COLORS.white), COLORS.text, 1.5);
-    card.picture(x + cardWidth / 2, y + 18, cardWidth - 10, 26);
+    card.picture(x + cardWidth / 2, y + 21, cardWidth - 8, 32);
     if (card.price) {
       drawSpriteScaled(COIN, COIN_COLORS, x + cardWidth / 2 - 14, y + cardHeight - 11, 1.2);
-      write(String(card.price), x + cardWidth / 2 - 5, y + cardHeight - 7, FONTS.tag,
+      write(String(card.price), x + cardWidth / 2 - 5, y + cardHeight - 7, FONTS.small,
             house.coins >= card.price ? COLORS.text : COLORS.newTag, "left");
     }
   });
@@ -5114,19 +5027,17 @@ function drawHouseShop(house, sidebar) {
 
   // The name of whatever card the mouse is on, along the bottom.
   const hovered = houseCardNames[state.hoverId];
-  write(hovered || (state.houseTab === "shop" ? "Click to buy" : "Click to use"), middle, sidebar.bottom - 10, FONTS.tag, COLORS.text);
+  write(hovered || (state.houseTab === "shop" ? "Click to buy" : "Click to use"), middle, sidebar.bottom - 10, FONTS.small, COLORS.text);
 }
 
-// A small picture of a piece of furniture (or a wallpaper or floor), fit inside a box.
+// A small picture of a piece of furniture, fit inside a box.
 function cardPicture(type) {
   return (x, y, maxWidth, maxHeight) => {
-    if (FURNITURE[type].rug) {
-      drawRug(x - 18, y - 9, 36, 18);
-      return;
-    }
-    const { rows } = furniturePicture(type, false);
-    const px = Math.min(maxWidth / rows[0].length, maxHeight / rows.length, 2);
-    drawFurniture(type, x - (rows[0].length * px) / 2, y - (rows.length * px) / 2, px, false);
+    const picture = FURNITURE_PICTURES[type];
+    if (!picture.naturalWidth) return;
+    const scale = Math.min(maxWidth / picture.naturalWidth, maxHeight / picture.naturalHeight);
+    const width = picture.naturalWidth * scale, height = picture.naturalHeight * scale;
+    drawFurniturePicture(type, { left: x - width / 2, top: y - height / 2, width, height }, false);
   };
 }
 
@@ -5184,14 +5095,12 @@ async function buyFurniture(type) {
       const doc = await transaction.get(houseRef());
       const data = doc.data();
       if (data.coins < kind.price) throw new Error("coins");
-      const item = { id: `${type}-${Date.now().toString(36)}`, type, gx: 0, gy: 0, flip: false, placed: false };
-      const spot = findFreeSpot(item, data.items);
-      if (spot) Object.assign(item, spot, { placed: true });
+      // It goes right into the room (drag it wherever you want it).
+      const item = { id: `${type}-${Date.now().toString(36)}`, type, ...newSpot(type), flip: false, placed: true };
       transaction.update(houseRef(), {
         coins: data.coins - kind.price, items: [...data.items, item],
         lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      if (!spot) setTimeout(() => showPopup("NO ROOM", `Your ${kind.name.toLowerCase()} is in "Mine". Make some room, then click it there!`), 300);
     });
   } catch (problem) {
     if (problem.message === "coins") notEnoughCoins();
@@ -5220,14 +5129,10 @@ async function buyLook(which, key) {
   }
 }
 
-// Takes something out of "Mine" and puts it in the first free spot.
+// Takes something out of "Mine" and puts it back in the room.
 function placeStored(item) {
-  const spot = findFreeSpot(item, state.house.items);
-  if (!spot) {
-    showPopup("NO ROOM", "There's no room for that! Move or put away something first.");
-    return;
-  }
   playSound("click");
+  const spot = typeof item.x === "number" ? {} : newSpot(item.type);
   saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...spot, placed: true } : other)) });
 }
 
@@ -5237,23 +5142,27 @@ function placeStored(item) {
 // The mouse went down on a piece of furniture.
 function startHouseDrag(item) {
   const layout = houseLayout;
-  const kind = FURNITURE[item.type];
+  const spot = clampSpot(item, itemSpot(item), layout);
+  const anchorX = layout.left + spot.x * layout.roomWidth;
+  const anchorY = FURNITURE[item.type].wall ? layout.wallTop + spot.y * layout.wallHeight
+                                            : layout.floorTop + spot.y * layout.floorHeight;
   houseDrag = {
-    item, gx: item.gx, gy: item.gy, moved: false, overShop: false,
+    item, spot, moved: false, overShop: false,
     startX: state.mouse.x, startY: state.mouse.y,
-    // Where on the piece he grabbed it (in tiles), so it doesn't jump to the mouse.
-    grabX: (state.mouse.x - layout.left) / layout.tile - item.gx,
-    grabY: kind.wall ? 0 : (state.mouse.y - layout.floorTop) / layout.tileHeight - item.gy,
+    // Where on the piece he grabbed it, so it doesn't jump to the mouse.
+    grabX: state.mouse.x - anchorX, grabY: state.mouse.y - anchorY,
   };
 }
 
-// The mouse moved while dragging: work out which spot it's over.
+// The mouse moved while dragging: the piece follows it (staying inside the room).
 function moveHouseDrag() {
   const drag = houseDrag, layout = houseLayout;
   if (Math.abs(state.mouse.x - drag.startX) > 4 || Math.abs(state.mouse.y - drag.startY) > 4) drag.moved = true;
   const kind = FURNITURE[drag.item.type];
-  drag.gx = keepBetween(Math.round((state.mouse.x - layout.left) / layout.tile - drag.grabX), 0, HOUSE_COLUMNS - kind.w);
-  drag.gy = kind.wall ? 0 : keepBetween(Math.round((state.mouse.y - layout.floorTop) / layout.tileHeight - drag.grabY), 0, HOUSE_ROWS - kind.d);
+  const x = (state.mouse.x - drag.grabX - layout.left) / layout.roomWidth;
+  const y = kind.wall ? (state.mouse.y - drag.grabY - layout.wallTop) / layout.wallHeight
+                      : (state.mouse.y - drag.grabY - layout.floorTop) / layout.floorHeight;
+  drag.spot = clampSpot(drag.item, { x, y }, layout);
   const shop = layout.sidebar;
   drag.overShop = state.mouse.x >= shop.left && state.mouse.x <= shop.right && state.mouse.y >= shop.top && state.mouse.y <= shop.bottom;
 }
@@ -5269,11 +5178,239 @@ function endHouseDrag() {
   } else if (drag.overShop) {
     playSound("paper", 0.6);
     saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, placed: false } : other)) });
-  } else if (spotIsFree(drag.item, drag.gx, drag.gy)) {
-    playSound("flip", 0.5);
-    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, gx: drag.gx, gy: drag.gy } : other)) });
   } else {
-    playSound("buzzer", BUZZER_VOLUME * 0.6);
+    playSound("flip", 0.5);
+    const spot = { x: Math.round(drag.spot.x * 1000) / 1000, y: Math.round(drag.spot.y * 1000) / 1000 };
+    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, ...spot } : other)) });
+  }
+}
+
+
+// ---------- You two and the cats, living in the house ----------
+//
+// They aren't furniture: they wander around on their own. You two walk around, sit on
+// the couch, nap in bed, and use the computer desk. The cats walk, sit, and nap on the
+// bed, couch, or rug. Click one for a little heart (the cats meow).
+// (Each computer has its own, so they won't be doing the same thing on both.)
+
+const FOLKS = [
+  { id: "tayler", sheet: "tayler", person: true },
+  { id: "jacob", sheet: "jacob", person: true },
+  { id: "orange", sheet: "orangecat", cat: 0 },
+  { id: "black", sheet: "blackcat", cat: 1 },
+];
+
+// How tall they're drawn (bigger = bigger), and how fast they walk.
+const FOLK_HEIGHT = { person: 118, cat: 60 };
+const FOLK_SPEED = { person: 60, cat: 70 };
+
+// Where you two go on the furniture. The numbers are parts of the furniture picture
+// (0 = its left or top edge, 1 = its right or bottom edge):
+//   spots - where each person goes, left to right (two spots = room for both of you)
+//   line  - how far down the picture you're "cut off" (by the cushion or blanket)
+//   show  - how much of you shows, from the top (0.3 = just your head)
+//   facing - "down" = facing out, "up" = your back to us (at the desk)
+const SEATS = {
+  couch: { spots: [0.33, 0.67], line: 0.6, show: 0.62, facing: "down" },
+  bed: { spots: [0.33, 0.62], line: 0.46, show: 0.4, facing: "down", sleepy: true },
+  desk: { spots: [0.5], line: 0.82, show: 0.68, facing: "up" },
+};
+// Where the cats nap on things.
+const NAP_SPOTS = {
+  bed: { x: 0.6, line: 0.78 },
+  couch: { x: 0.5, line: 0.62 },
+  rug: { x: 0.5, line: 0.7 },
+};
+
+state.folks = null;
+let folksLastTime = null;
+
+function makeFolks() {
+  return FOLKS.map((info, number) => ({
+    info, x: 0.2 + number * 0.2, y: 0.55 + (number % 2) * 0.25, facing: "down",
+    doing: info.person ? "stand" : "sit", timer: 1 + number * 1.5, target: null, goal: null, petted: 0,
+  }));
+}
+
+// Is this spot on this furniture already taken (or someone's on their way to it)?
+function spotTaken(itemId, spot, except) {
+  return state.folks.some(folk => folk !== except && folk.goal && folk.goal.itemId === itemId && folk.goal.spot === spot);
+}
+
+function updateFolks(layout, placed, boxes, time) {
+  if (!state.folks) state.folks = makeFolks();
+  const seconds = folksLastTime === null ? 0 : Math.min(0.1, (time - folksLastTime) / 1000);
+  folksLastTime = time;
+  const byId = Object.fromEntries(placed.map(item => [item.id, item]));
+
+  state.folks.forEach(folk => {
+    folk.petted = Math.max(0, folk.petted - seconds);
+    // The furniture they were using got moved or put away? They get up.
+    if (folk.goal && (!byId[folk.goal.itemId] || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
+      folk.goal = null;
+      folk.doing = folk.info.person ? "stand" : "sit";
+      folk.timer = 1.5;
+    }
+
+    if (folk.doing === "walk") {
+      const target = folk.target;
+      const dx = (target.x - folk.x) * layout.roomWidth, dy = (target.y - folk.y) * layout.floorHeight;
+      const distance = Math.hypot(dx, dy);
+      const speed = FOLK_SPEED[folk.info.person ? "person" : "cat"] * layout.art;
+      if (distance < 1.5) {
+        // Made it! Sit / nap / work if they were heading to some furniture.
+        folk.x = target.x;
+        folk.y = target.y;
+        if (folk.goal) {
+          folk.doing = "using";
+          folk.timer = between(10, 25, Math.random());
+        } else {
+          folk.doing = folk.info.person ? "stand" : "sit";
+          folk.timer = between(2, 5, Math.random());
+        }
+      } else {
+        const step = Math.min(distance, speed * seconds);
+        folk.x += (dx / distance) * step / layout.roomWidth;
+        folk.y += (dy / distance) * step / layout.floorHeight;
+        folk.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+      }
+      return;
+    }
+
+    folk.timer -= seconds;
+    if (folk.timer <= 0) chooseWhatToDo(folk, placed, boxes, layout);
+  });
+}
+
+// Picks something new to do, at random (furniture only if it's in the room).
+function chooseWhatToDo(folk, placed, boxes, layout) {
+  const isCat = !folk.info.person;
+  // Cats stretch when they wake up from a nap.
+  if (isCat && folk.doing !== "stretch" && (folk.doing === "nap" || (folk.goal && folk.goal.nap))) {
+    folk.goal = null;
+    folk.doing = "stretch";
+    folk.timer = 1.2;
+    return;
+  }
+  folk.goal = null;
+  folk.facing = "down";
+
+  const choices = ["walk", "walk", isCat ? "sit" : "stand"];
+  placed.forEach(item => {
+    if (isCat) {
+      if (NAP_SPOTS[item.type] && !spotTaken(item.id, "nap", folk)) choices.push({ itemId: item.id, spot: "nap", nap: true });
+    } else if (SEATS[item.type]) {
+      SEATS[item.type].spots.forEach((_, spot) => {
+        if (!spotTaken(item.id, spot, folk)) choices.push({ itemId: item.id, spot });
+      });
+    }
+  });
+  if (isCat) choices.push("nap");
+  const choice = choices[Math.floor(Math.random() * choices.length)];
+
+  if (choice === "walk") {
+    folk.doing = "walk";
+    folk.target = { x: between(0.08, 0.92, Math.random()), y: between(0.3, 0.95, Math.random()) };
+  } else if (typeof choice === "string") {
+    folk.doing = choice;                // "stand", "sit", or "nap" (right on the floor)
+    folk.timer = choice === "nap" ? between(8, 18, Math.random()) : between(2, 5, Math.random());
+  } else {
+    // Walk to the front of that furniture first.
+    const box = boxes[choice.itemId];
+    const item = placed.find(other => other.id === choice.itemId);
+    const across = choice.nap ? NAP_SPOTS[item.type].x : SEATS[item.type].spots[choice.spot];
+    const x = (box.left + box.width * (item.flip ? 1 - across : across) - layout.left) / layout.roomWidth;
+    const y = (box.top + box.height - layout.floorTop) / layout.floorHeight + 0.04;
+    folk.goal = choice;
+    folk.doing = "walk";
+    folk.target = { x: keepBetween(x, 0.03, 0.97), y: keepBetween(y, 0.1, 1) };
+  }
+}
+
+// How far forward they are (for drawing back to front). On furniture, just in front of it.
+function folkDepth(folk, layout, boxes) {
+  if (folk.doing === "using" && boxes[folk.goal.itemId]) {
+    const box = boxes[folk.goal.itemId];
+    return box.top + box.height + 0.5;
+  }
+  return layout.floorTop + folk.y * layout.floorHeight;
+}
+
+// Draws one of them, doing whatever they're doing.
+function drawFolk(folk, layout, boxes, time) {
+  const isCat = !folk.info.person;
+  const height = FOLK_HEIGHT[isCat ? "cat" : "person"] * layout.art;
+  let x = layout.left + folk.x * layout.roomWidth;
+  let bottom = layout.floorTop + folk.y * layout.floorHeight;
+  let row, column, show = 1;
+
+  if (folk.doing === "using") {
+    // On a piece of furniture: line them up with the cushion, pillow, or chair.
+    const box = boxes[folk.goal.itemId];
+    const item = state.house.items.find(other => other.id === folk.goal.itemId);
+    if (folk.goal.nap) {
+      const nap = NAP_SPOTS[item.type];
+      x = box.left + box.width * (item.flip ? 1 - nap.x : nap.x);
+      bottom = box.top + box.height * nap.line;
+      row = CAT_ROWS.lie;
+      column = Math.floor(time / 1500) % 2 ? 1 : 2;      // breathing in and out
+    } else {
+      const seat = SEATS[item.type];
+      const across = seat.spots[folk.goal.spot];
+      x = box.left + box.width * (item.flip ? 1 - across : across);
+      bottom = box.top + box.height * seat.line;
+      row = PERSON_ROWS[seat.facing];
+      column = 0;
+      show = seat.show;
+      if (seat.sleepy) {
+        const drift = (time / 900 + folk.goal.spot * 0.5) % 1;
+        ctx.globalAlpha = 1 - drift;
+        write("z", x + 10 + drift * 6, bottom - height * show - 4 - drift * 14, FONTS.small, COLORS.text);
+        ctx.globalAlpha = 1;
+      }
+    }
+  } else if (folk.doing === "walk") {
+    row = isCat ? CAT_ROWS[folk.facing] : PERSON_ROWS[folk.facing];
+    column = isCat ? Math.floor(time / 130) % 4 : [0, 2, 1, 3][Math.floor(time / 160) % 4];
+  } else if (isCat) {
+    if (folk.doing === "nap") { row = CAT_ROWS.lie; column = Math.floor(time / 1500) % 2 ? 1 : 2; }
+    else if (folk.doing === "stretch") { row = CAT_ROWS.lie; column = 3; }
+    else { row = CAT_ROWS.sit; column = (time + folk.info.cat * 1300) % 3500 < 180 ? 1 : 0; }   // blinks
+  } else {
+    row = PERSON_ROWS.down;
+    column = 0;
+  }
+
+  let drawn = drawFrame(folk.info.sheet, row, column, x, bottom, height, show);
+  // No cat pictures yet? The little pixel cat instead.
+  if (!drawn && isCat) drawn = drawPixelCat(CATS[folk.info.cat], folk.doing === "walk" && Math.floor(time / 200) % 2, folk.facing === "left", x, bottom, height * 0.5);
+  if (!drawn) return;
+
+  // Clicking them: a heart (and a meow from the cats).
+  hitBoxes.push({ left: drawn.left, top: drawn.top, right: drawn.left + drawn.width, bottom: drawn.top + drawn.height,
+                  onClick: () => petFolk(folk) });
+  if (folk.petted > 0) {
+    const rise = (1.5 - folk.petted) * 10;
+    drawPixels(HEART, Math.round(x - 7), Math.round(drawn.top - 16 - rise), 2, COLORS.heart);
+    if (isCat) {
+      steppedBox(x - 22, drawn.top - 40 - rise, x + 22, drawn.top - 24 - rise, 2, COLORS.white, COLORS.text, 1.5);
+      write("meow!", x, drawn.top - 31.5 - rise, FONTS.small, COLORS.text);
+    }
+  }
+}
+
+function petFolk(folk) {
+  folk.petted = 1.5;
+  if (folk.info.person) {
+    playSound("click");
+    return;
+  }
+  if (sounds.meow) playSound("meow", 0.6);
+  else playSound("click");
+  // A walking cat stops to enjoy it.
+  if (folk.doing === "walk" && !folk.goal) {
+    folk.doing = "sit";
+    folk.timer = 2.5;
   }
 }
 
@@ -5417,11 +5554,15 @@ function stepWhack(game, area, seconds) {
       drawPerson(OTHER === YOUR_NAME ? "tayler" : "jacob", LEGS_STAND, Math.round(left), Math.round(top), 2);
     } else {
       const cat = CATS.find(info => info.name === mole.kind);
-      const outline = { W: cat.outline, S: cat.outline, E: cat.outline, P: cat.outline };
-      [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => {
-        drawSprite(CAT_SIT, outline, Math.round(left) + dx * CAT_SIZE, Math.round(top) + dy * CAT_SIZE, CAT_SIZE);
-      });
-      drawSprite(CAT_SIT, cat.colors, Math.round(left), Math.round(top), CAT_SIZE);
+      // The new cat picture if it's there (sitting), or the little pixel cat.
+      const sheet = mole.kind === "orange" ? "orangecat" : "blackcat";
+      if (!drawFrame(sheet, CAT_ROWS.sit, 0, hole.x, top + height + 4, height * 1.8)) {
+        const outline = { W: cat.outline, S: cat.outline, E: cat.outline, P: cat.outline };
+        [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => {
+          drawSprite(CAT_SIT, outline, Math.round(left) + dx * CAT_SIZE, Math.round(top) + dy * CAT_SIZE, CAT_SIZE);
+        });
+        drawSprite(CAT_SIT, cat.colors, Math.round(left), Math.round(top), CAT_SIZE);
+      }
     }
     // Booped: little stars.
     if (mole.hit) drawPixels(SPARKLE, hole.x - 10, top - 14, 2, COLORS.white);
@@ -6325,7 +6466,7 @@ function draw(time) {
   if (state.screensaver) {
     drawScreensaver(time);
     // Keep showing the little pixel arrow, so he can see where he's clicking.
-    canvas.style.cursor = mouseIsIn(SCREEN) ? ARROW_CURSOR : "default";
+    canvas.style.cursor = mouseIsIn(SCREEN) ? cursorsForSize().arrow : "default";
   } else {
     updateMouse();
   }
@@ -6403,15 +6544,28 @@ function makeCursor(rows, size, hotX, hotY, fallback) {
   }));
   return `url(${picture.toDataURL()}) ${hotX} ${hotY}, ${fallback}`;
 }
-const ARROW_CURSOR = makeCursor(ARROW_CURSOR_PIXELS, 2, 0, 0, "default");
-const HEART_CURSOR = makeCursor(HEART_CURSOR_PIXELS, 2, 11, 6, "pointer");
+// The cursors come in a few sizes, so they shrink when the computer is shown small (like
+// in a tiny pop-out window) and don't look giant next to everything else.
+const CURSORS = {};
+function cursorsForSize() {
+  const shown = canvas.getBoundingClientRect().width / WIDTH;   // how big the drawing is shown
+  const size = Math.max(1, Math.min(2, Math.round(shown * 1.3)));
+  if (!CURSORS[size]) {
+    CURSORS[size] = {
+      arrow: makeCursor(ARROW_CURSOR_PIXELS, size, 0, 0, "default"),
+      heart: makeCursor(HEART_CURSOR_PIXELS, size, Math.round(5.5 * size), 3 * size, "pointer"),
+    };
+  }
+  return CURSORS[size];
+}
 
 // Picks the cursor (pixel ones on the computer screen), and lifts the envelope when hovered.
 function updateMouse() {
   const box = boxUnderMouse();
   // (Title bars you can drag show the normal arrow, not the "click me" heart.)
   const clickable = box && !box.blocker && !box.dragWin;
-  if (mouseIsIn(SCREEN)) canvas.style.cursor = clickable ? HEART_CURSOR : ARROW_CURSOR;
+  const cursors = cursorsForSize();
+  if (mouseIsIn(SCREEN)) canvas.style.cursor = clickable ? cursors.heart : cursors.arrow;
   else canvas.style.cursor = clickable ? "pointer" : "default";
   // Remember which icon is on top under the mouse, so only that one lights up next time.
   state.hoverId = box ? box.id : null;
@@ -6713,6 +6867,8 @@ function closeWindow() {
     state.game = null;
     return;
   }
+  // Closing "Our date" ends a preview of it.
+  if (state.window === "datenight") endDatePreview();
   // Take this window out of the list. (A love note he just read moves into Memories.)
   state.windows = state.windows.filter(win => win !== loadedWindow);
   loadedWindow = null;
@@ -7022,6 +7178,7 @@ const CINEMA = {
 // step: which part you're on. picks: what he picked instead, like { 2: "Shrek" }.
 state.dateNight = { step: 0, picks: {} };
 state.datePicking = false;    // is the "Something else" box open?
+state.datePreview = null;     // while you're previewing the date (your side only)
 let curtainStart = null;      // when the curtains started opening (on this computer)
 let curtainForStep = null;    // which step those curtains were for
 
@@ -7043,7 +7200,7 @@ function partName(number) {
 // changes this computer, so nothing gets sent as him.)
 function saveDateNight(changes) {
   Object.assign(state.dateNight, changes);
-  if (!database || state.online !== "ok" || state.previewingHisSide) return;
+  if (!database || state.online !== "ok" || state.previewingHisSide || state.datePreview) return;
   database.collection("datenight").doc(DATE_NIGHT.id).set({
     step: state.dateNight.step,
     picks: state.dateNight.picks,
@@ -7059,6 +7216,11 @@ function listenForDateNight() {
   database.collection("datenight").doc(DATE_NIGHT.id).onSnapshot(doc => {
     if (!doc.exists) return;
     const data = doc.data();
+    // While you're previewing, keep the real progress to the side until you're done.
+    if (state.datePreview) {
+      state.datePreview.real = { step: data.step || 0, picks: data.picks || {} };
+      return;
+    }
     const before = state.dateNight.step;
     state.dateNight = { step: data.step || 0, picks: data.picks || {} };
     if (state.dateNight.step !== before) state.datePicking = false;
@@ -7089,11 +7251,40 @@ function checkDateTime() {
 checkDateTime();
 setInterval(checkDateTime, 20000);
 
+// ON THE DAY OF THE DATE: a "Start date" button at the top middle of the desktop (it opens
+// "Our date"). Once the date has started it says "Our date", and it goes away at the end.
+function drawStartDateButton(time) {
+  if (!DATE_NIGHT || todayString() !== DATE_NIGHT.date) return;
+  if (state.dateNight.step > DATE_NIGHT.parts.length) return;
+  const text = state.dateNight.step === 0 ? "Start date" : "Our date";
+  const bob = Math.round(Math.sin(time / 400) * 2);     // a little float up and down
+  drawButton(CENTER_X, SCREEN.top + 26 + bob, 150, 32, text, COLORS.acceptFill, COLORS.acceptText,
+             () => openWindow("datenight"));
+  drawPixels(HEART, CENTER_X - 75 - 20, SCREEN.top + 20 + bob, 2, COLORS.heart);
+  drawPixels(HEART, CENTER_X + 75 + 6, SCREEN.top + 20 + bob, 2, COLORS.heart);
+}
+
 // The buttons.
 function startDateNight() {
   playSound("chime");
   saveDateNight({ step: 1 });
-  if (!state.previewingHisSide) pingOther(`💗 ${ME} started our date! Open the little computer.`);
+  if (!state.previewingHisSide && !state.datePreview) pingOther(`💗 ${ME} started our date! Open the little computer.`);
+}
+
+// YOUR SIDE ONLY: "Preview" plays the whole date on just your computer, so you can see it
+// before he does. Nothing is saved and nobody gets pinged. Closing the window ends it.
+function previewDateNight() {
+  state.datePreview = { real: { ...state.dateNight } };
+  state.dateNight = { step: 0, picks: {} };
+  curtainForStep = null;
+  startDateNight();
+}
+function endDatePreview() {
+  if (!state.datePreview) return;
+  state.dateNight = state.datePreview.real;
+  state.datePreview = null;
+  state.datePicking = false;
+  curtainForStep = null;
 }
 function nextDatePart() {
   playSound("click");
@@ -7127,6 +7318,16 @@ function drawDateNight(area, time) {
     else drawGameCard(area, part, step);
   }
   ctx.restore();
+
+  // Your side: a Preview button on the start screen, and a reminder while previewing.
+  const middle = (area.left + area.right) / 2;
+  if (DATE_NIGHT && IS_TAYLER && !state.datePreview && state.dateNight.step === 0) {
+    drawButton(area.right - 62, area.top + 20, 100, 24, "Preview", COLORS.white, COLORS.text, previewDateNight);
+  }
+  if (state.datePreview) {
+    steppedBox(area.left + 4, area.top + 4, area.left + 168, area.top + 20, 2, COLORS.titleBar, COLORS.text, 1.5);
+    write("Preview (only you see this)", area.left + 86, area.top + 12.5, FONTS.small, COLORS.text);
+  }
 
   // The "Something else" box, on top.
   if (state.datePicking && state.dateNight.step >= 1 && DATE_NIGHT.parts[state.dateNight.step - 1]) {
@@ -7174,19 +7375,52 @@ function drawGameCard(area, part, step) {
   // The card.
   const card = { left: area.left + 30, top: area.top + 28, right: area.right - 30, bottom: area.bottom - 48 };
   steppedBox(card.left, card.top, card.right, card.bottom, 4, COLORS.white, COLORS.text, 2);
+
+  // The game's banner picture across the top (if there is one, and he didn't pick something else).
+  const banner = part.picture && !own ? loadedPicture(part.picture) : null;
+  if (banner) {
+    const height = 58, width = height * banner.naturalWidth / banner.naturalHeight;
+    const left = (card.left + card.right) / 2 - width / 2;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(banner, left, card.top + 10, width, height);
+    ctx.restore();
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(left, card.top + 10, width, height);
+    drawGameSteps(card, steps, card.top + 80);
+    drawGameCardButtons(area, name);
+    return;
+  }
   drawSprite(CONTROLLER, CONTROLLER_COLORS, card.left + 16, card.top + 16, 5);   // the Arcade's little controller
   write("Game time!", card.left + 70, card.top + 18, FONTS.small, COLORS.heart, "left", "top");
   // The name, as big as fits (from 24 pixels tall down to 12).
   let nameSize = 24;
-  ctx.font = `bold ${nameSize}px 'Pixelify Sans'`;
+  ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
   while (nameSize > 12 && ctx.measureText(name).width > card.right - card.left - 90) {
     nameSize--;
-    ctx.font = `bold ${nameSize}px 'Pixelify Sans'`;
+    ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
   }
   write(name, card.left + 70, card.top + 32, ctx.font, COLORS.text, "left", "top");
 
-  // The numbered steps, wrapped to fit the card.
-  let y = card.top + 76;
+  drawGameSteps(card, steps, card.top + 76);
+  drawGameCardButtons(area, name);
+}
+
+// Pictures used on the date (like the game's banner), loaded the first time they're needed.
+const DATE_PICTURES = {};
+function loadedPicture(src) {
+  if (!DATE_PICTURES[src]) {
+    DATE_PICTURES[src] = new Image();
+    DATE_PICTURES[src].src = src;
+  }
+  return DATE_PICTURES[src].naturalWidth ? DATE_PICTURES[src] : null;
+}
+
+// The numbered steps on the game card, wrapped to fit.
+function drawGameSteps(card, steps, top) {
+  let y = top;
   steps.forEach((line, number) => {
     const lines = wrapWords(line, FONTS.note, card.right - card.left - 70);
     write(`${number + 1}.`, card.left + 22, y, FONTS.note, COLORS.heart, "left", "top");
@@ -7196,8 +7430,11 @@ function drawGameCard(area, part, step) {
     });
     y += 6;
   });
+}
 
-  // The buttons along the bottom.
+// The buttons along the bottom of the game card.
+function drawGameCardButtons(area, name) {
+  const middle = (area.left + area.right) / 2;
   const buttonY = area.bottom - 24;
   drawButton(middle - 160, buttonY, 120, 28, "Steam", COLORS.cream, COLORS.text, () => openSteamPage(name));
   drawButton(middle, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
@@ -7378,7 +7615,7 @@ datePickForm.addEventListener("submit", event => {
   // The cinema's curtains open again for the new movie.
   curtainForStep = null;
   playSound("coin");
-  if (!state.previewingHisSide) pingOther(`💗 ${ME} picked something else for our date: ${pick}`);
+  if (!state.previewingHisSide && !state.datePreview) pingOther(`💗 ${ME} picked something else for our date: ${pick}`);
 });
 
 
@@ -7423,7 +7660,7 @@ async function popOut() {
     return;
   }
   const floating = poppedOut.document;
-  floating.title = "MWAHHH";
+  floating.title = document.title;   // "Tay's Computer" or "Jacob's Computer"
 
   // Copy the page's styles (fonts, text boxes, buttons) into the floating window.
   document.querySelectorAll("style").forEach(style => floating.head.appendChild(style.cloneNode(true)));
@@ -7463,26 +7700,49 @@ function putComputerBack() {
   poppedOut = null;
   poppedOutNote.remove();
   document.body.prepend(canvas, ui);
-  // Undo the zoom from fitPoppedOut, so the normal page sizes come back.
-  ["position", "left", "top", "width", "height", "maskImage", "webkitMaskImage"].forEach(key => { canvas.style[key] = ""; });
-  extendDesk();
+  fitBigPage();
+}
+
+// THE BIG PAGE: in the installed app (or any small window), zoom in on just the computer's
+// screen too, the same way the pop-out does. In a big browser tab, show the whole desk.
+// (Change this number to make it switch at a different window width.)
+const ZOOM_IN_BELOW_WIDTH = 760;
+
+function fitBigPage() {
+  if (poppedOut) return;
+  const installed = window.matchMedia("(display-mode: standalone)").matches;
+  const zoomIn = installed || window.innerWidth < ZOOM_IN_BELOW_WIDTH;
+  document.body.classList.toggle("floating", zoomIn);
+  if (zoomIn) {
+    document.body.style.background = "";
+    fitToScreen(window);
+  } else {
+    // Undo the zoom, so the normal page sizes come back.
+    ["position", "left", "top", "width", "height", "maskImage", "webkitMaskImage"].forEach(key => { canvas.style[key] = ""; });
+    extendDesk();
+  }
+}
+window.addEventListener("resize", fitBigPage);
+fitBigPage();
+
+function fitPoppedOut() {
+  if (poppedOut) fitToScreen(poppedOut);
 }
 
 // Zooms the drawing so just the computer's screen (plus a little of its frame) fills
-// the floating window. The rest of the picture (the desk, the wall) hangs off the
-// edges where you can't see it.
-function fitPoppedOut() {
-  if (!poppedOut) return;
+// the window. The rest of the picture (the desk, the wall) hangs off the edges where
+// you can't see it.
+function fitToScreen(win) {
   const area = {
     left: SCREEN.left - POP_OUT_FRAME, top: SCREEN.top - POP_OUT_FRAME,
     width: SCREEN.right - SCREEN.left + POP_OUT_FRAME * 2,
     height: SCREEN.bottom - SCREEN.top + POP_OUT_FRAME * 2,
   };
   // As big as fits, without cutting off any of the screen.
-  const zoom = Math.min(poppedOut.innerWidth / area.width, poppedOut.innerHeight / area.height);
+  const zoom = Math.min(win.innerWidth / area.width, win.innerHeight / area.height);
   // Center the screen in the window.
-  const left = (poppedOut.innerWidth - area.width * zoom) / 2 - area.left * zoom;
-  const top = (poppedOut.innerHeight - area.height * zoom) / 2 - area.top * zoom;
+  const left = (win.innerWidth - area.width * zoom) / 2 - area.left * zoom;
+  const top = (win.innerHeight - area.height * zoom) / 2 - area.top * zoom;
   Object.assign(canvas.style, {
     position: "absolute",
     left: `${left}px`, top: `${top}px`,
