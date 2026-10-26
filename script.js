@@ -2475,7 +2475,7 @@ async function sendIM(text) {
     from: ME,
     sentAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
-  playSound("paper", 0.6);
+  playSound("coin", 0.6);
   // Only ping once per chat burst.
   let lastPing = 0;
   try { lastPing = Number(localStorage.getItem(`${SIDE}:imPinged`)) || 0; } catch (problem) {}
@@ -2635,11 +2635,13 @@ function placePanels() {
       const box = request.box;
       // If the window is dragged partway off the screen, trim the panel at the screen's
       // edges too (so the typing box doesn't hang over the computer's frame).
+      // (These can be negative, meaning "the screen's edge is further out than the panel",
+      // so things that pop up outside the panel, like the emoji menu, still show.)
       const trim = {
-        left: Math.max(0, SCREEN.left - box.left),
-        right: Math.max(0, box.right - SCREEN.right),
-        top: Math.max(0, SCREEN.top - box.top),
-        bottom: Math.max(0, box.bottom - TASKBAR.top),
+        left: SCREEN.left - box.left,
+        right: box.right - SCREEN.right,
+        top: SCREEN.top - box.top,
+        bottom: box.bottom - TASKBAR.top,
       };
       Object.assign(panel.style, {
         display: "block",
