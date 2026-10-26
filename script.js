@@ -359,7 +359,7 @@ const state = {
   memoryItem: null,       // which old note or photo is open inside that folder (or null)
   password: "",           // what he's typed into the secret folder's password box
   passwordWrong: false,   // did he just type the wrong password?
-  cat: null,              // the desktop cat
+  cats: null,             // the desktop cats
   title: "",              // the big typed words
   subtitle: "",           // the smaller typed words under them
   sparkleDim: SPARKLE_SPOTS.map(() => false),   // which sparkles are blinking
@@ -497,6 +497,49 @@ function drawPixels(pattern, x, y, size, color) {
   });
 }
 
+// A little vase with a tulip, sitting on the desk to the left of the computer.
+// R = petals, Y = middle, G = stem, L = leaves, O = outline, B = vase, W = shine.
+const VASE = [
+  "....R..R....",
+  "...RRRRRR...",
+  "...RRYYRR...",
+  "...RRRRRR...",
+  "....RRRR....",
+  ".....GG.....",
+  "..LL.GG.....",
+  "...LLGG.....",
+  ".....GG.LL..",
+  ".....GGLL...",
+  ".....GG.....",
+  "...OOOOOO...",
+  "..OBBBBBBO..",
+  ".OBWBBBBBBO.",
+  ".OBWBBBBBBO.",
+  ".OBBBBBBBBO.",
+  "..OBBBBBBO..",
+  "...OOOOOO...",
+];
+const VASE_COLORS = {
+  R: "#F07A9C", Y: "#FFE08A", G: "#5E9E5A", L: "#7CC27A", O: "#45284A", B: "#A9D6FB", W: "#FFFFFF",
+};
+const VASE_SPOT = { x: 26, y: 392, size: 4 };   // where it sits, and how big its pixels are
+
+// Draws the vase. Clicking it makes the flower wiggle and a heart float up.
+function drawVase(time) {
+  const { x, y, size } = VASE_SPOT;
+  const width = VASE[0].length * size, height = VASE.length * size;
+  // The flower part (top rows) leans side to side for a moment after a click.
+  const wiggle = state.vaseWiggle ? Math.max(0, 1 - (time - state.vaseWiggle) / 1200) : 0;
+  const lean = Math.round(Math.sin(time / 80) * 3 * wiggle);
+  drawSprite(VASE.slice(0, 11), VASE_COLORS, x + lean, y, size);
+  drawSprite(VASE.slice(11), VASE_COLORS, x, y + 11 * size, size);
+  if (wiggle > 0) drawPixels(HEART, x + width / 2 - 7, y - 20 - (1 - wiggle) * 20, 2, COLORS.heart);
+  hitBoxes.push({ left: x, top: y, right: x + width, bottom: y + height, onClick: () => {
+    playSound("click");
+    state.vaseWiggle = performance.now();
+  } });
+}
+
 // Pixel-art versions of emojis. Any of these in the text gets drawn as pixel art instead.
 // O = outline, P = pink, W = white, Y = yellow, B = blue tears, R = red mouth.
 // To add another emoji, copy one of these blocks and draw it with letters.
@@ -526,6 +569,110 @@ const EMOJI_PIXELS = {
       "..OOOOO..",
     ],
     colors: { O: "#45284A", Y: "#FFD45E", B: "#7FB8F0", R: "#E05A6B" },
+  },
+  "😊": {
+    rows: [
+      "..OOOOO..",
+      ".OYYYYYO.",
+      "OYOYYYOYO",
+      "OYYYYYYYO",
+      "ORRYYYRRO",
+      "OYOYYYOYO",
+      ".OYOOOYO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", Y: "#FFD45E", R: "#F4A6BD" },
+  },
+  "😂": {
+    rows: [
+      "..OOOOO..",
+      ".OYYYYYO.",
+      "OYOYYYOYO",
+      "BOYOYOYOB",
+      "BYOOOOOYB",
+      "OYOWWWOYO",
+      ".OYOOOYO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", Y: "#FFD45E", B: "#7FB8F0", W: "#FFFFFF" },
+  },
+  "🥺": {
+    rows: [
+      "..OOOOO..",
+      ".OYYYYYO.",
+      "OOOYYYOOO",
+      "OOWOYOWOO",
+      "OOOOYOOOO",
+      "OYYYYYYYO",
+      ".OYYOYYO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", Y: "#FFD45E", W: "#FFFFFF" },
+  },
+  "😘": {
+    rows: [
+      "..OOOOO.P",
+      ".OYYYYYPP",
+      "OYOYYYOYO",
+      "OYYYYOOYO",
+      "ORYYYYYRO",
+      "OYYYOOYYO",
+      ".OYYOYYO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", Y: "#FFD45E", P: "#F07A9C", R: "#F4A6BD" },
+  },
+  "🌸": {
+    rows: [
+      "...O.O...",
+      "..OPOPO..",
+      ".OPPPPPO.",
+      "OPPPYPPPO",
+      ".OPPPPPO.",
+      "..OPOPO..",
+      "...O.O...",
+      ".........",
+    ],
+    colors: { O: "#45284A", P: "#F8BFCB", Y: "#FFD45E" },
+  },
+  "✨": {
+    rows: [
+      "...Y.....",
+      "..YYY....",
+      "YYYWYYY..",
+      "..YYY..Y.",
+      "...Y..YYY",
+      ".......Y.",
+      "..Y......",
+      ".YYY.....",
+    ],
+    colors: { Y: "#FFD45E", W: "#FFFFFF" },
+  },
+  "🐱": {
+    rows: [
+      "O.......O",
+      "OO.....OO",
+      "OWOOOOOWO",
+      "OWWWWWWWO",
+      "OWOWWWOWO",
+      "OPWWPWWPO",
+      ".OWWWWWO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", W: "#FFFFFF", P: "#F4A6BD" },
+  },
+  "🎮": {
+    rows: [
+      ".........",
+      ".OOOOOOO.",
+      "OOWOOOBOO",
+      "OWWWOBOBO",
+      "OOWOOOBOO",
+      ".OO...OO.",
+      ".........",
+      ".........",
+    ],
+    colors: { O: "#45284A", W: "#FFFFFF", B: "#7FB8F0" },
   },
 };
 const EMOJI_PATTERN = new RegExp(`(${Object.keys(EMOJI_PIXELS).join("|")})`, "u");
@@ -577,8 +724,21 @@ function wrapWords(text, font, maxWidth) {
     let current = "";
     part.split(" ").forEach(word => {
       const attempt = current ? current + " " + word : word;
-      if (ctx.measureText(attempt).width <= maxWidth || !current) current = attempt;
-      else { lines.push(current); current = word; }
+      if (ctx.measureText(attempt).width <= maxWidth) {
+        current = attempt;
+        return;
+      }
+      if (current) lines.push(current);
+      current = "";
+      // A word too long for a whole line (like "MOREEEEEEEEEEEE") gets chopped
+      // into pieces that fit, letter by letter.
+      for (const letter of word) {
+        if (current && ctx.measureText(current + letter).width > maxWidth) {
+          lines.push(current);
+          current = "";
+        }
+        current += letter;
+      }
     });
     lines.push(current);
   });
@@ -645,6 +805,14 @@ function drawTitleBar() {
 // different day. Without it, it uses the real date.
 const PREVIEW = new URLSearchParams(location.search);
 
+// Who's using this computer, and who's on the other end.
+// The link with ?inbox on the end is YOUR side. The plain link is HIS side.
+const IS_TAYLER = PREVIEW.has("inbox");
+const ME = IS_TAYLER ? YOUR_NAME : RECIPIENT_NAME;
+const OTHER = IS_TAYLER ? RECIPIENT_NAME : YOUR_NAME;
+const MY_TIME_ZONE = IS_TAYLER ? YOUR_TIME_ZONE : HIS_TIME_ZONE;
+const OTHER_TIME_ZONE = IS_TAYLER ? HIS_TIME_ZONE : YOUR_TIME_ZONE;
+
 // Today's date as year-month-day, like "2026-10-25", on HIS computer.
 function todayString() {
   if (PREVIEW.has("today")) return PREVIEW.get("today");
@@ -670,20 +838,19 @@ function drawDesktop(time) {
 
   // Every icon on the desktop: upcoming invites first, then the extras.
   const icons = [
-    ...INVITES.filter(invite => !isPast(invite)).map(inviteIcon),
+    ...allInvites().filter(invite => !isPast(invite)).map(inviteIcon),
     // Love notes he hasn't read yet (the one he's reading right now stays until he closes it).
-    ...LOVE_NOTES.filter(note => !noteIsRead(note) || state.noteId === note.id).map(note => ({
+    // (Your love notes and "Open when..." letters are for HIM, so they're only on his side.)
+    ...(IS_TAYLER ? [] : LOVE_NOTES.filter(note => !noteIsRead(note) || state.windows.some(win => win.noteId === note.id)).map(note => ({
       label: "love_note", picture: drawNoteIcon, onClick: () => openNote(note), tag: "new",
-    })),
-    { label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen") },
+    }))),
+    ...(IS_TAYLER ? [] : [{ label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen") }]),
     { label: "Memories", picture: drawFolderIcon, onClick: () => openWindow("memories") },
     { label: "Arcade", picture: drawArcadeIcon, onClick: () => openWindow("games") },
     // The secret folder (coupon book) is hidden for now. To bring it back, remove the // below.
     // { label: "Secret", picture: drawSecretIcon, onClick: () => openWindow("secret") },
-    { label: "Notepad", picture: drawGuestbookIcon, onClick: () => openWindow("guestbook") },
-    // Only on YOUR side: the inbox where his notes show up.
-    ...(IS_TAYLER ? [{ label: "Inbox", picture: drawInboxIcon, onClick: () => openWindow("inbox"),
-                       tag: unreadMessages().length ? "new" : null }] : []),
+    { label: "Plan a date", picture: drawPlanIcon, onClick: () => openWindow("plan") },
+    { label: "IM", picture: drawIMIcon, onClick: () => openWindow("im"), tag: unreadIMs().length ? "new" : null },
   ];
   // They go down the left side in columns of 4, like a real desktop.
   // (The 5th icon starts a new column.)
@@ -691,9 +858,9 @@ function drawDesktop(time) {
     drawIcon(icon, 182 + Math.floor(number / 4) * 82, 80 + (number % 4) * 70);
   });
 
-  drawCat(time);
+  drawCats(time);
 
-  if (state.window) drawWindow(time);
+  drawAllWindows(time);
   drawTaskbar();
   if (state.startMenu) drawStartMenu();
 }
@@ -701,7 +868,11 @@ function drawDesktop(time) {
 // Turns an invite into a desktop icon.
 function inviteIcon(invite) {
   let tag = null;
-  if (!remembers(`opened:${invite.id}`)) tag = "new";
+  if (invite.remote) {
+    // A planned date: NEW when it's your turn to answer, a check once it's accepted.
+    if (needsMyAnswer(invite.remote)) tag = "new";
+    else if (invite.remote.status === "accepted") tag = "check";
+  } else if (!remembers(`opened:${invite.id}`)) tag = "new";
   else if (remembers(`accepted:${invite.id}`)) tag = "check";
   return { label: invite.label, picture: drawEnvelopeIcon, onClick: () => openInvite(invite), tag };
 }
@@ -907,6 +1078,36 @@ function drawTaskbar() {
   const heartX = right - 10 - ctx.measureText(hisClock).width - 20;
   drawPixels(HEART, heartX, middle - 5, 2, COLORS.heart);
   write(yourClock, heartX - 6, middle + 1, FONTS.small, COLORS.text, "right");
+
+  // A button for each open window, between Start and the clocks.
+  // The window on top looks pressed in. Clicking a button brings that window forward,
+  // or minimizes it if it's already on top.
+  const clocksLeft = heartX - 6 - ctx.measureText(yourClock).width - 8;
+  const space = clocksLeft - (button.right + 6);
+  const count = state.windows.length;
+  if (count === 0) return;
+  const width = Math.min(96, space / count - 4);
+  const onTop = topWindow();
+  state.windows.forEach((win, number) => {
+    const box = { left: button.right + 6 + number * (width + 4), top: button.top, bottom: button.bottom,
+                  id: `taskbar:${number}`, onClick: () => taskbarClick(win) };
+    box.right = box.left + width;
+    hitBoxes.push(box);
+    const pressed = win === onTop;
+    steppedBox(box.left, box.top, box.right, box.bottom, 2,
+               pressed ? COLORS.iconHover : (state.hoverId === box.id ? COLORS.white : COLORS.cream), COLORS.text, 1.5);
+
+    // A little heart, then the window's name (cut short with "..." if it doesn't fit).
+    drawPixels(HEART, box.left + 5, middle - 3, 1, COLORS.heart);
+    let name = win.window.startsWith("game:") ? GAMES[win.window.slice(5)].label : TASKBAR_NAMES[win.window];
+    ctx.font = FONTS.tag;
+    const room = width - 20;
+    if (ctx.measureText(name).width > room) {
+      while (name.length > 1 && ctx.measureText(name + "...").width > room) name = name.slice(0, -1);
+      name += "...";
+    }
+    write(name, box.left + 15, middle + 1, FONTS.tag, COLORS.text, "left");
+  });
 }
 
 // The choices in the Start menu.
@@ -1001,19 +1202,137 @@ function togglePowerMenu() {
   state.powerMenu = !state.powerMenu;
 }
 
-// Where windows (the love note, Memories, Games) open on the desktop.
-const WINDOW = { left: 250, top: 82, right: 592, bottom: 320 };
+// ====================================================================================
+// WINDOWS (he can open several, drag them around, and minimize them, like a real computer)
+// ====================================================================================
+
+// How big a window is (when it's not full screen).
+const WINDOW_WIDTH = 342;
+const WINDOW_HEIGHT = 238;
+
 const WINDOW_TITLES = {
   notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade",
   openwhen: "Open when...", secret: "Secret",
-  guestbook: `Notepad - leave ${YOUR_NAME} a note`, inbox: "Inbox",
+  plan: `Plan a date for ${OTHER}`, im: `IM - ${OTHER}`,
+};
+// The shorter names on the taskbar buttons.
+const TASKBAR_NAMES = {
+  notes: "love_note", memories: "Memories", games: "Arcade", openwhen: "Open when",
+  secret: "Secret", plan: "Plan a date", im: "IM",
 };
 
-// Where the open window is right now: normal size, or filling the whole computer screen
-// (above the taskbar) when he's clicked the full-screen button.
+// Every open window. The LAST one in the list is on top (the one he's using).
+// Each window remembers its own things (where it is, which letter is open, its game...).
+state.windows = [];
+
+// These are the things each window keeps for itself, and what a brand new window starts with.
+const WINDOW_DEFAULTS = {
+  window: null, game: null, maximized: false, openWhen: null, letterPage: 0,
+  letterListScroll: 0, letterListMaxScroll: 0, launcherScroll: 0, launcherMaxScroll: 0,
+  memoriesFolder: null, memoryItem: null, noteId: null, inboxMessage: null,
+  password: "", passwordWrong: false,
+  imScroll: Infinity, imMaxScroll: 0,   // the chat starts scrolled to the newest message
+};
+
+// The rest of the code was written for ONE window, using things like state.window and
+// state.openWhen. So before working with a window, we "load" its things into state, and
+// afterwards "unload" them (saving any changes back into that window).
+let loadedWindow = null;
+
+function loadWindow(win) {
+  if (loadedWindow === win) return;
+  unloadWindow();
+  loadedWindow = win;
+  Object.keys(WINDOW_DEFAULTS).forEach(key => { state[key] = win[key]; });
+}
+
+function unloadWindow() {
+  if (loadedWindow) Object.keys(WINDOW_DEFAULTS).forEach(key => { loadedWindow[key] = state[key]; });
+  loadedWindow = null;
+  Object.assign(state, WINDOW_DEFAULTS);
+}
+
+// Does something with a window loaded, then unloads it again.
+function withWindow(win, job) {
+  if (!win) return job();
+  loadWindow(win);
+  try { return job(); } finally { unloadWindow(); }
+}
+
+// The window on top (that isn't minimized), or null if there isn't one.
+function topWindow() {
+  for (let i = state.windows.length - 1; i >= 0; i--) {
+    if (!state.windows[i].minimized) return state.windows[i];
+  }
+  return null;
+}
+
+// Where a window is: its own spot, or the whole computer screen (above the taskbar) if full screen.
+function windowBoxOf(win) {
+  if (win.maximized) return { left: SCREEN.left, top: SCREEN.top, right: SCREEN.right, bottom: TASKBAR.top };
+  return { left: win.x, top: win.y, right: win.x + WINDOW_WIDTH, bottom: win.y + WINDOW_HEIGHT };
+}
+
+// The top window that the mouse is over (for scrolling), or null.
+function windowUnderMouse() {
+  for (let i = state.windows.length - 1; i >= 0; i--) {
+    const win = state.windows[i];
+    if (!win.minimized && mouseIsIn(windowBoxOf(win))) return win;
+  }
+  return null;
+}
+
+// Brings a window to the front. Any game in another window pauses itself.
+function focusWindow(win) {
+  state.windows = state.windows.filter(other => other !== win);
+  state.windows.push(win);
+  win.minimized = false;
+  state.windows.forEach(other => {
+    if (other !== win && other.game && other.game.playing) other.game.paused = true;
+  });
+}
+
+// The minimize button (and clicking a window's taskbar button when it's already on top).
+function minimizeWindow(win) {
+  win.minimized = true;
+  if (win.game && win.game.playing) win.game.paused = true;
+}
+
+// Clicking a window's button on the taskbar.
+function taskbarClick(win) {
+  playSound("click");
+  if (!win.minimized && win === topWindow()) minimizeWindow(win);
+  else focusWindow(win);
+}
+
+// Draws every open window, bottom to top.
+function drawAllWindows(time) {
+  const top = topWindow();
+  // Windows are trimmed to the screen (above the taskbar), so a window dragged near the
+  // edge looks like it's sliding off the screen, not hanging over the computer's frame.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(SCREEN.left, SCREEN.top, SCREEN.right - SCREEN.left, TASKBAR.top - SCREEN.top);
+  ctx.clip();
+  state.windows.forEach(win => {
+    if (win.minimized) return;
+    const first = hitBoxes.length;
+    withWindow(win, () => drawWindow(time, win === top));
+    // Remember which window each clickable thing belongs to.
+    for (let i = first; i < hitBoxes.length; i++) {
+      if (!hitBoxes[i].win) hitBoxes[i].win = win;
+    }
+  });
+  ctx.restore();
+}
+
+// Dragging a window by its title bar.
+let dragging = null;   // { win, dx, dy } while a window is being dragged
+
+// Where the loaded window is right now.
 function windowBox() {
-  if (state.maximized) return { left: SCREEN.left, top: SCREEN.top, right: SCREEN.right, bottom: TASKBAR.top };
-  return WINDOW;
+  return loadedWindow ? windowBoxOf({ ...loadedWindow, maximized: state.maximized })
+                      : windowBoxOf({ x: 250, y: 82, maximized: state.maximized });
 }
 
 // The inside of the window (under its title bar). Games are played in here.
@@ -1028,13 +1347,20 @@ function toggleMaximized() {
   state.maximized = !state.maximized;
 }
 
-// A retro window with a pink title bar, a full-screen button, and an X to close it.
-function drawWindow(time) {
+// A retro window with a pink title bar, and minimize, full-screen, and X buttons.
+//   onTop - is this the window he's using? (Windows behind it get a paler title bar.)
+function drawWindow(time, onTop = true) {
   const { left, top, right, bottom } = windowBox();
+  state.windowOnTop = onTop;
 
   // An invisible "blocker" covering the window, so clicks don't go through to icons behind it.
   // (In the jumping and flying games, clicking anywhere in the window jumps/flaps.)
   hitBoxes.push({ left, top, right, bottom, onClick: gameAction, blocker: true });
+
+  // The title bar is the handle for dragging the window around (not when it's full screen).
+  if (!state.maximized) {
+    hitBoxes.push({ left, top, right: right - 58, bottom: top + 22, onClick: () => {}, dragWin: loadedWindow });
+  }
 
   if (!state.maximized) {
     ctx.fillStyle = COLORS.text;                            // shadow
@@ -1042,7 +1368,7 @@ function drawWindow(time) {
   }
   ctx.fillStyle = COLORS.cream;
   ctx.fillRect(left, top, right - left, bottom - top);
-  ctx.fillStyle = COLORS.titleBar;
+  ctx.fillStyle = onTop ? COLORS.titleBar : "#FBE3E9";
   ctx.fillRect(left, top, right - left, 22);
   ctx.strokeStyle = COLORS.text;
   ctx.lineWidth = 3;
@@ -1075,6 +1401,19 @@ function drawWindow(time) {
   }
   hitBoxes.push({ left: buttonLeft - 2, top, right: right - 24, bottom: top + 22, onClick: toggleMaximized });
 
+  // The minimize button (a little line), left of the full-screen button.
+  const minimizeLeft = right - 56;
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(minimizeLeft, top + 4, 14, 14);
+  ctx.fillStyle = COLORS.text;
+  ctx.fillRect(minimizeLeft + 3, top + 12, 8, 2);
+  const win = loadedWindow;
+  hitBoxes.push({ left: minimizeLeft - 2, top, right: buttonLeft - 2, bottom: top + 22, onClick: () => {
+    playSound("click");
+    minimizeWindow(win);
+  } });
+
   // The inside of the window.
   const inside = gameArea();
   if (state.window === "notes") drawNotes(inside, time);
@@ -1082,8 +1421,8 @@ function drawWindow(time) {
   if (state.window === "games") drawGamesFolder(inside);
   if (state.window === "openwhen") drawOpenWhen(inside);
   if (state.window === "secret") drawSecret(inside, time);
-  if (state.window === "guestbook") drawGuestbook(inside, time);
-  if (state.window === "inbox") drawInbox(inside);
+  if (state.window === "plan") drawPlan(inside);
+  if (state.window === "im") drawIM(inside);
   if (state.game) drawGameWindow(time);
 }
 
@@ -1241,11 +1580,12 @@ function showLockedLetter(letter) {
 }
 
 // The mouse wheel scrolls the "Open when..." list when it's too long to fit.
-canvas.addEventListener("wheel", event => {
+// (It scrolls whichever window the mouse is over.)
+canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
   if (state.window !== "openwhen" || state.openWhen !== null || !state.letterListMaxScroll) return;
   event.preventDefault();   // scroll the list, not the web page
   state.letterListScroll = keepBetween(state.letterListScroll + event.deltaY * 0.5, 0, state.letterListMaxScroll);
-}, { passive: false });
+}), { passive: false });
 
 // The biggest bold font (14 down to 9) that fits the words in this many pixels.
 function fontThatFits(text, maxWidth) {
@@ -1367,7 +1707,9 @@ function tryPassword() {
 }
 
 // Typing goes into the password box while the locked secret folder is open.
-window.addEventListener("keydown", event => {
+// (Typing goes to the window on top, like a real computer.)
+window.addEventListener("keydown", event => withWindow(topWindow(), () => {
+  if (isTypingInForm(event)) return;
   if (state.mode !== "desktop" || state.window !== "secret" || state.popup || remembers("secret:unlocked")) return;
   if (event.key === "Enter") {
     tryPassword();
@@ -1380,7 +1722,7 @@ window.addEventListener("keydown", event => {
     state.passwordWrong = false;
     playKeySound(0.4);
   }
-});
+}));
 
 // The coupon book: two columns of coupons. Used ones get a USED stamp.
 function drawCoupons(inside) {
@@ -1441,13 +1783,14 @@ function useCoupon(number) {
 // ====================================================================================
 
 // A little white cat (facing right). W = white fur, E = eyes, P = pink nose.
+// (S = stripes, which show on the orange cat.)
 const CAT_WALK_1 = [
   ".........W..W",
   ".........WWWW",
   "W........WEWE",
   "W........WWPW",
-  ".W.WWWWWWWWW.",
-  "..WWWWWWWWWW.",
+  ".W.WSWWSWWWW.",
+  "..WWSWWSWWWW.",
   "..WWWWWWWWW..",
   "..W..W..W..W.",
 ];
@@ -1457,28 +1800,37 @@ const CAT_SIT = [
   ".........WWWW",
   ".........WEWE",
   ".........WWPW",
-  "......WWWWWW.",
-  ".....WWWWWWW.",
-  "WW...WWWWWWW.",
+  "......WSWWWW.",
+  ".....WWSWWWW.",
+  "WW...WWSWWWW.",
   ".WWWWWWWWWWW.",
 ];
-const CAT_COLORS = { W: "#FFFFFF", E: "#45284A", P: "#F4A6BD" };
-const CAT_OUTLINE = { W: "#45284A", E: "#45284A", P: "#45284A" };
-const CAT_SIZE = 3;   // how big each of the cat's squares is (bigger = bigger cat)
+const CAT_SIZE = 3;   // how big each of the cats' squares is (bigger = bigger cats)
 const CAT_WIDTH = 13 * CAT_SIZE, CAT_HEIGHT = 8 * CAT_SIZE;
-const CAT_LEFT = 250, CAT_RIGHT = 600;   // how far left and right it wanders
+const CAT_LEFT = 250, CAT_RIGHT = 600;   // how far left and right they wander
 
-// Flips a picture left-to-right (so the cat can face the other way).
+// The cats! W = fur, S = stripes, E = eyes, P = nose. "outline" is the line around them.
+const CATS = [
+  { name: "orange", start: 420, colors: { W: "#F4A259", S: "#D9762B", E: "#45284A", P: "#F4A6BD" }, outline: "#45284A" },
+  { name: "black", start: 330, colors: { W: "#2B2530", S: "#2B2530", E: "#FFD45E", P: "#F4A6BD" }, outline: "#6E5A7A" },
+];
+
+// Flips a picture left-to-right (so a cat can face the other way).
 function mirror(rows) {
   return rows.map(row => [...row].reverse().join(""));
 }
 
-// The cat wanders along the bottom of the screen, sits for a bit, then wanders again.
-function drawCat(time) {
-  if (!state.cat) {
-    state.cat = { x: 420, direction: 1, sitting: false, timer: 4, meow: 0, lastTime: time };
+// Each cat wanders along the bottom of the screen, sits for a bit, then wanders again.
+function drawCats(time) {
+  if (!state.cats) {
+    state.cats = CATS.map((info, number) => ({
+      info, x: info.start, direction: number ? -1 : 1, sitting: number === 1, timer: 2 + number * 2, meow: 0, lastTime: time,
+    }));
   }
-  const cat = state.cat;
+  state.cats.forEach(cat => drawCat(cat, time));
+}
+
+function drawCat(cat, time) {
   const seconds = Math.min(0.05, (time - cat.lastTime) / 1000);
   cat.lastTime = time;
 
@@ -1508,14 +1860,15 @@ function drawCat(time) {
   if (cat.direction < 0) picture = mirror(picture);
   const x = Math.round(cat.x), y = TASKBAR.top - CAT_HEIGHT - 1;
 
-  // A dark outline (the same picture, nudged one square each way), then the cat itself.
+  // An outline (the same picture in one color, nudged one square each way), then the cat itself.
+  const outline = { W: cat.info.outline, S: cat.info.outline, E: cat.info.outline, P: cat.info.outline };
   [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => {
-    drawSprite(picture, CAT_OUTLINE, x + dx * CAT_SIZE, y + dy * CAT_SIZE, CAT_SIZE);
+    drawSprite(picture, outline, x + dx * CAT_SIZE, y + dy * CAT_SIZE, CAT_SIZE);
   });
-  drawSprite(picture, CAT_COLORS, x, y, CAT_SIZE);
+  drawSprite(picture, cat.info.colors, x, y, CAT_SIZE);
 
-  // Clicking the cat: it sits, says meow, and a heart pops up.
-  hitBoxes.push({ left: x - 2, top: y - 2, right: x + CAT_WIDTH + 2, bottom: y + CAT_HEIGHT + 2, onClick: petCat });
+  // Clicking a cat: it sits, says meow, and a heart pops up.
+  hitBoxes.push({ left: x - 2, top: y - 2, right: x + CAT_WIDTH + 2, bottom: y + CAT_HEIGHT + 2, onClick: () => petCat(cat) });
   if (cat.meow > 0) {
     const bubbleX = x + CAT_WIDTH / 2;
     steppedBox(bubbleX - 24, y - 26, bubbleX + 24, y - 8, 2, COLORS.white, COLORS.text, 1.5);
@@ -1524,8 +1877,7 @@ function drawCat(time) {
   }
 }
 
-function petCat() {
-  const cat = state.cat;
+function petCat(cat) {
   cat.sitting = true;
   cat.timer = 2.5;
   cat.meow = 1.5;
@@ -1536,15 +1888,21 @@ function petCat() {
 
 
 // ====================================================================================
-// THE GUESTBOOK (he writes you notes) AND YOUR INBOX (where you read them)
+// ONLINE STUFF: the IM chat and planning dates for each other
 // ====================================================================================
 //
-// His notes are saved in Firebase (a free Google service). Discord pings you when one
-// arrives, without saying what it is. Only YOUR Google account can read them.
+// Messages and dates are saved in Firebase (a free Google service), so they can travel
+// between your two computers. Discord pings whoever is on the other end.
 //
-// YOUR side of the site is the normal link with ?inbox on the end (bookmark it!):
-//   https://taylerbuchanan.github.io/date-night/?inbox
-// The plain link (without ?inbox) is always HIS side, even on your computer.
+// THE TWO SIDES:
+//   YOUR side:  https://taylerbuchanan.github.io/date-night/?inbox
+//               You sign in with Google once (in the IM window).
+//   HIS side:   the plain link. The very first time, he opens a special "pairing" link
+//               (the plain link + ?pair=THE-CODE). That connects his browser for good, and
+//               he never has to sign in to anything.
+//
+// The pairing code is NOT in this file on purpose (this file is public on GitHub).
+// It only lives in your Firebase rules, which nobody else can see.
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyA_kebLMqLzl7VF1_USywD42NcN8-7qIcU",
@@ -1555,12 +1913,18 @@ const FIREBASE_CONFIG = {
   appId: "1:521343865256:web:e46175fd71f6f526f5cd9d",
 };
 
-// The longest note he can write, in letters.
-const GUESTBOOK_MAX = 400;
+// Discord pings. One goes to your private server (pings YOU), one to a channel he can
+// see (pings HIM). Leave his as "" until you've made it.
+const DISCORD_TO_TAYLER = DISCORD_WEBHOOK;
+const DISCORD_TO_JACOB = "";
 
-const IS_TAYLER = PREVIEW.has("inbox");
+// IM pings only happen once per "chat burst": after a ping, it stays quiet this many minutes.
+const IM_PING_QUIET_MINUTES = 10;
 
-// Connect to Firebase. (If it can't load, like with no internet, the guestbook says so.)
+// The longest IM message, in letters.
+const IM_MAX = 1000;
+
+// Connect to Firebase. (If it can't load, like with no internet, the windows say so.)
 let database = null, firebaseAuth = null;
 try {
   firebase.initializeApp(FIREBASE_CONFIG);
@@ -1570,239 +1934,225 @@ try {
   console.log("Firebase didn't load:", problem);
 }
 
-// ---------- His side: writing a note ----------
+state.online = database ? "connecting" : "offline";   // see drawOnlineProblem() for what each means
+state.ims = [];           // IM messages: { id, from, text, sentAt }
+state.oldNotes = [];      // his old Notepad notes, shown at the top of the chat
+state.remoteDates = [];   // dates you two have planned for each other (from Firebase)
 
-state.guestText = "";       // what he's typed so far
-state.guestStatus = "";     // "", "sending", "sent", or "error"
 
-function drawGuestbook(inside, time) {
-  const middle = (inside.left + inside.right) / 2;
-
-  if (state.guestStatus === "sent") {
-    drawPixels(HEART, middle - 14, inside.top + 40, 4, COLORS.heart);
-    write("Sent!", middle, inside.top + 86, FONTS.celebrationSubtitle, COLORS.text);
-    write(`${YOUR_NAME} will get your note soon.`, middle, inside.top + 114, FONTS.note, COLORS.text);
-    drawButton(middle, inside.top + 160, 160, 30, "Write another", COLORS.cream, COLORS.text, () => {
-      playSound("click");
-      state.guestStatus = "";
-    });
-    return;
-  }
-
-  write(`Write ${YOUR_NAME} a note:`, inside.left + 12, inside.top + 14, FONTS.menu, COLORS.text, "left");
-
-  // The writing box, with the words wrapped to fit and a blinking cursor at the end.
-  const box = { left: inside.left + 10, top: inside.top + 28, right: inside.right - 10, bottom: inside.bottom - 42 };
-  ctx.fillStyle = COLORS.white;
-  ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-  ctx.strokeStyle = COLORS.text;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
-
-  const lines = wrapWords(state.guestText, FONTS.note, box.right - box.left - 20);
-  const lineHeight = 17;
-  // If it's too long to show, only show the last lines that fit.
-  const fits = Math.floor((box.bottom - box.top - 10) / lineHeight);
-  const shown = lines.slice(-fits);
-  shown.forEach((line, number) => {
-    write(line, box.left + 8, box.top + 6 + number * lineHeight, FONTS.note, COLORS.text, "left", "top");
-  });
-  if (!state.guestText) {
-    write("Start typing...", box.left + 8, box.top + 6, FONTS.note, COLORS.lostLife, "left", "top");
-  }
-  if (Math.floor(time / 500) % 2 === 0 && state.guestStatus !== "sending") {
-    ctx.font = FONTS.note;
-    const lastLine = shown[shown.length - 1] || "";
-    ctx.fillStyle = COLORS.text;
-    ctx.fillRect(box.left + 9 + ctx.measureText(lastLine).width, box.top + 6 + (shown.length - 1) * lineHeight, 2, 15);
-  }
-
-  // How many letters he has left, and any problems.
-  let status = `${GUESTBOOK_MAX - state.guestText.length} letters left`;
-  if (state.guestStatus === "sending") status = "Sending...";
-  if (state.guestStatus === "error") status = "Couldn't send. Try again?";
-  write(status, inside.left + 12, inside.bottom - 19, FONTS.tag, state.guestStatus === "error" ? COLORS.newTag : COLORS.text, "left");
-
-  drawButton(inside.right - 58, inside.bottom - 19, 90, 26, "Send", COLORS.acceptFill, COLORS.acceptText, sendNote);
+// In the preview of his side (on your computer), nothing gets sent as him. Returns true
+// (and says so) if this is the preview.
+function blockedInPreview() {
+  if (!state.previewingHisSide) return false;
+  showPopup("PREVIEW", `This is just a preview of ${RECIPIENT_NAME}'s side, so nothing was sent.`);
+  return true;
 }
 
-// Typing (and pasting) goes into the note while the guestbook is open.
-function guestbookIsTyping() {
-  return state.mode === "desktop" && state.window === "guestbook" && !state.popup &&
-         state.guestStatus !== "sending" && state.guestStatus !== "sent";
+// Things this browser remembers are kept separately for each side, so your side and
+// the preview of his side (in the same browser) don't mix them up.
+const SIDE = IS_TAYLER ? "tayler" : "jacob";
+
+// ---------- Sending a Discord ping to the other person ----------
+
+function pingOther(text) {
+  const url = IS_TAYLER ? DISCORD_TO_JACOB : DISCORD_TO_TAYLER;
+  if (!url) return;
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: text }),
+  }).catch(() => {});   // if Discord doesn't answer, that's okay
 }
 
-window.addEventListener("keydown", event => {
-  if (!guestbookIsTyping() || event.ctrlKey || event.metaKey) return;
-  if (event.key === "Backspace") {
-    event.preventDefault();
-    state.guestText = state.guestText.slice(0, -1);
-  } else if (event.key === "Enter") {
-    event.preventDefault();
-    if (state.guestText.length < GUESTBOOK_MAX) state.guestText += "\n";
-  } else if (event.key.length === 1 && state.guestText.length < GUESTBOOK_MAX) {
-    event.preventDefault();   // so Space doesn't scroll the page
-    state.guestText += event.key;
-    playKeySound(0.3);
-  } else {
-    return;
-  }
-  if (state.guestStatus === "error") state.guestStatus = "";
-});
 
-window.addEventListener("paste", event => {
-  if (!guestbookIsTyping()) return;
-  const pasted = event.clipboardData.getData("text");
-  state.guestText = (state.guestText + pasted).slice(0, GUESTBOOK_MAX);
-});
+// ---------- Signing in (you) and pairing (him) ----------
 
-// Saves the note in Firebase, then pings you on Discord (without the note itself).
-async function sendNote() {
-  const text = state.guestText.trim();
-  if (!text || state.guestStatus === "sending") return;
-  playSound("click");
-  state.guestStatus = "sending";
-  try {
-    await database.collection("guestbook").add({
-      text,
-      from: RECIPIENT_NAME,
-      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    state.guestText = "";
-    state.guestStatus = "sent";
-    playSound("win", 0.5);
-    // The Discord ping. If it fails, that's okay: the note is already saved.
-    fetch(DISCORD_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: `💌 ${RECIPIENT_NAME} left you a message on the little computer! Open your inbox to read it.` }),
-    }).catch(() => {});
-  } catch (problem) {
-    console.log("Couldn't send the note:", problem);
-    state.guestStatus = "error";
-    playSound("buzzer", BUZZER_VOLUME);
-  }
-}
+// If he opened the pairing link, remember the code, then tidy the link in the address bar.
+const pairCode = PREVIEW.get("pair");
+if (pairCode) history.replaceState(null, "", location.pathname);
 
-// ---------- Your side: the inbox ----------
+let listening = false;
 
-state.messages = [];          // his notes, newest first: { id, text, sentAt }
-state.inboxSignedIn = false;  // are you signed in with your Google account?
-state.inboxMessage = null;    // which note is open (or null for the list)
-state.inboxProblem = "";      // a problem to show, like "That account can't read these"
-
-// Notes you haven't opened yet. (Your browser remembers which ones you've read.)
-function unreadMessages() {
-  return state.messages.filter(message => !remembers(`message:${message.id}`));
-}
-
-// When you're signed in, keep listening for his notes. New ones show up right away,
-// with a "New message!" pop-up, even while the site is already open.
-let knownMessageIds = null;
-if (IS_TAYLER && firebaseAuth) {
-  firebaseAuth.onAuthStateChanged(user => {
-    state.inboxSignedIn = !!user;
-    if (!user) return;
-    database.collection("guestbook").orderBy("sentAt", "desc").onSnapshot(snapshot => {
-      state.inboxProblem = "";
-      state.messages = snapshot.docs.map(doc => ({
-        id: doc.id,
-        text: doc.data().text,
-        sentAt: doc.data().sentAt ? doc.data().sentAt.toDate() : new Date(),
-      }));
-      const unread = unreadMessages();
-      // Pop up once when the site opens (if there's anything unread), and again for each new note.
-      const isNew = knownMessageIds === null ? unread.length > 0
-                                             : unread.some(message => !knownMessageIds.has(message.id));
-      knownMessageIds = new Set(state.messages.map(message => message.id));
-      if (isNew && state.window !== "inbox") {
-        playSound("incoming");
-        state.popup = { title: "NEW MESSAGE", message: `You have a new message from ${RECIPIENT_NAME}! Open your Inbox to read it.` };
+if (firebaseAuth) {
+  firebaseAuth.onAuthStateChanged(async user => {
+    if (IS_TAYLER) {
+      // Your side: you need to be signed in with your Google account.
+      if (!user || user.isAnonymous) {
+        state.online = "signin";
+        return;
       }
-    }, problem => {
-      console.log("Couldn't load messages:", problem);
-      state.inboxProblem = "This account can't read the notes. Try signing in with your own Google account.";
-    });
+      startListening();
+      return;
+    }
+
+    // His link, opened on YOUR computer while you're signed in: a preview of his side.
+    // It shows everything he'd see, but won't send anything as him.
+    if (user && !user.isAnonymous) {
+      state.previewingHisSide = true;
+      startListening();
+      return;
+    }
+
+    // His side: sign in "anonymously" behind the scenes (no account, nothing to type).
+    if (!user) {
+      firebaseAuth.signInAnonymously().catch(() => { state.online = "offline"; });
+      return;
+    }
+    // First time, with the pairing link: tell Firebase this browser is his.
+    if (pairCode) {
+      try {
+        await database.collection("devices").doc(user.uid).set({
+          code: pairCode,
+          pairedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+        state.popup = { title: "CONNECTED", message: `This computer is connected to ${YOUR_NAME}'s now! 💗` };
+      } catch (problem) {
+        console.log("Pairing didn't work:", problem);
+        state.popup = { title: "OOPS", message: "That connection link didn't work. Ask for a new one?" };
+      }
+    }
+    startListening();
   });
 }
 
 function signIn() {
   playSound("click");
-  state.inboxProblem = "";
-  firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(problem => {
-    console.log("Sign-in problem:", problem);
-    state.inboxProblem = "Sign-in didn't work. Try again?";
-  });
+  firebaseAuth.signOut()
+    .then(() => firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider()))
+    .catch(problem => console.log("Sign-in problem:", problem));
 }
 
-function drawInbox(inside) {
-  const middle = (inside.left + inside.right) / 2;
+// Keep listening for new messages and dates. New ones show up right away.
+function startListening() {
+  if (listening) return;
+  listening = true;
+  state.online = "ok";
 
-  if (!firebaseAuth) {
-    write("The inbox can't connect right now.", middle, inside.top + 90, FONTS.note, COLORS.text);
-    return;
-  }
-  if (!state.inboxSignedIn) {
-    drawPixels(LOCK, middle - 10, inside.top + 24, 4, COLORS.text);
-    write(`Sign in to read ${RECIPIENT_NAME}'s notes`, middle, inside.top + 70, FONTS.body, COLORS.text);
-    if (state.inboxProblem) write(state.inboxProblem, middle, inside.top + 94, FONTS.tag, COLORS.newTag);
-    drawButton(middle, inside.top + 132, 200, 30, "Sign in with Google", COLORS.acceptFill, COLORS.acceptText, signIn);
-    return;
-  }
-  if (state.inboxProblem) {
-    const lines = wrapWords(state.inboxProblem, FONTS.note, inside.right - inside.left - 40);
-    lines.forEach((line, number) => write(line, middle, inside.top + 80 + number * 18, FONTS.note, COLORS.newTag));
-    return;
-  }
+  const failed = problem => {
+    console.log("Couldn't load:", problem);
+    listening = false;
+    state.online = IS_TAYLER ? "wrongaccount" : "unpaired";
+  };
 
-  // One note, opened.
-  if (state.inboxMessage) {
-    const message = state.inboxMessage;
-    const page = { left: inside.left + 10, top: inside.top + 8, right: inside.right - 10, bottom: inside.bottom - 40 };
-    ctx.fillStyle = COLORS.white;
-    ctx.fillRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
-    ctx.strokeStyle = COLORS.text;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
-    write(`From ${RECIPIENT_NAME}, ${formatDate(message.sentAt)}`, page.left + 12, page.top + 14, FONTS.small, COLORS.text, "left");
-    const lines = wrapWords(message.text, FONTS.note, page.right - page.left - 24);
-    lines.slice(0, 9).forEach((line, number) => {
-      write(line, page.left + 12, page.top + 28 + number * 16, FONTS.note, COLORS.text, "left", "top");
-    });
-    drawButton(inside.left + 46, inside.bottom - 19, 76, 26, "Back", COLORS.cream, COLORS.text, () => {
-      playSound("click");
-      state.inboxMessage = null;
-    });
-    return;
-  }
+  database.collection("IMs").orderBy("sentAt").limitToLast(300).onSnapshot(snapshot => {
+    state.ims = snapshot.docs.map(doc => ({
+      id: doc.id,
+      from: doc.data().from,
+      text: doc.data().text,
+      sentAt: doc.data().sentAt ? doc.data().sentAt.toDate() : new Date(),
+    }));
+    checkForNewIMs();
+  }, failed);
 
-  // The list of notes, newest first. Unread ones are pink with a NEW tag.
-  if (state.messages.length === 0) {
-    drawEmptyFolderMessage(inside, "No notes yet...", "but he'll write one soon!");
-    return;
+  database.collection("guestbook").orderBy("sentAt").onSnapshot(snapshot => {
+    state.oldNotes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      from: doc.data().from || RECIPIENT_NAME,
+      text: doc.data().text,
+      sentAt: doc.data().sentAt ? doc.data().sentAt.toDate() : new Date(),
+    }));
+  }, () => {});
+
+  database.collection("dates").orderBy("sentAt").onSnapshot(snapshot => {
+    state.remoteDates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    checkForNewDates();
+  }, failed);
+}
+
+
+// ---------- Pop-ups for new things ----------
+
+// Shows a pop-up, but if he's still on the MWAHHH start screen, waits until he clicks it.
+function notify(title, message) {
+  if (state.mode === "desktop" && !state.popup) {
+    playSound("incoming");
+    state.popup = { title, message };
+  } else {
+    state.waitingPopups = [...(state.waitingPopups || []), { title, message }];
   }
-  const rowHeight = 30;
-  state.messages.slice(0, 6).forEach((message, number) => {
-    const top = inside.top + 8 + number * rowHeight;
-    const unread = !remembers(`message:${message.id}`);
-    const box = { left: inside.left + 8, top, right: inside.right - 8, bottom: top + rowHeight - 4,
-                  onClick: () => openMessage(message), id: `message:${message.id}` };
-    hitBoxes.push(box);
-    steppedBox(box.left, box.top, box.right, box.bottom, 3,
-               state.hoverId === box.id ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
-    drawSmallEnvelope(box.left + 20, top + 13, !unread);
-    write(formatDate(message.sentAt), box.left + 40, top + 13, FONTS.small, COLORS.text, "left");
-    if (unread) {
-      steppedBox(box.right - 44, top + 5, box.right - 8, top + 21, 2, COLORS.newTag, COLORS.text, 1.5);
-      write("NEW", box.right - 26, top + 13.5, FONTS.tag, COLORS.white);
+}
+
+// Shows any waiting pop-ups (one after another, each time the last one is closed).
+function showWaitingPopups() {
+  if (state.mode !== "desktop" || state.popup || !state.waitingPopups || !state.waitingPopups.length) return;
+  playSound("incoming");
+  state.popup = state.waitingPopups.shift();
+}
+
+// Remembers the newest message time he's seen, so new ones get a NEW tag.
+function lastSeenIM() {
+  try { return Number(localStorage.getItem(`${SIDE}:imSeen`)) || 0; } catch (problem) { return 0; }
+}
+
+function unreadIMs() {
+  return state.ims.filter(message => message.from !== ME && message.sentAt.getTime() > lastSeenIM());
+}
+
+let knownIMs = null;
+function checkForNewIMs() {
+  const isNew = knownIMs === null ? unreadIMs().length > 0
+                                  : unreadIMs().some(message => !knownIMs.has(message.id));
+  knownIMs = new Set(state.ims.map(message => message.id));
+  const imOnTop = topWindow() && topWindow().window === "im";
+  if (isNew && !imOnTop) notify("NEW MESSAGE", `${OTHER} sent you a message! Open IM to read it.`);
+}
+
+// Each date only pops up once per change (planned, new time, accepted).
+const notifiedDates = new Set();
+function checkForNewDates() {
+  state.remoteDates.forEach(date => {
+    const version = `${date.id}:${date.status}:${date.proposedBy}:${date.when && date.when.seconds}`;
+    if (notifiedDates.has(version) || remembers(`${SIDE}:dateseen:${version}`)) return;
+    notifiedDates.add(version);
+    if (needsMyAnswer(date)) {
+      notify("NEW DATE", date.proposedBy ? `${date.proposedBy} suggested a new time for your date!`
+                                         : `${date.from} planned a date for you! 💌`);
+    } else if (date.status === "accepted" && date.from === ME) {
+      notify("YIPPIE", `${OTHER} accepted your date! 🎉`);
     }
+    remember(`${SIDE}:dateseen:${version}`);
   });
 }
 
-function openMessage(message) {
-  playSound("paper");
-  remember(`message:${message.id}`);
-  state.inboxMessage = message;
+
+// ---------- Times in both of your time zones ----------
+
+// Splits a moment into its year, month, day, hour, and minute in one time zone.
+function zonedParts(date, timeZone) {
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  return Object.fromEntries(format.formatToParts(date).map(part => [part.type, part.value]));
+}
+
+// A day like "2026-11-06" and a time like "21:00", in a time zone, as a real moment.
+function zonedTimeToDate(day, time, timeZone) {
+  const [year, month, dayNumber] = day.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const wanted = Date.UTC(year, month - 1, dayNumber, hour, minute);
+  let guess = wanted;
+  // Guess, check what that looks like in the time zone, and fix the difference (twice, to be sure).
+  for (let i = 0; i < 2; i++) {
+    const parts = zonedParts(new Date(guess), timeZone);
+    guess += wanted - Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
+  }
+  return new Date(guess);
+}
+
+function dayIn(date, timeZone) {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function timeIn(date, timeZone) {
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
+}
+function longDayIn(date, timeZone) {
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone });
+}
+
+// "Friday, Nov 6" + "9:00 PM your time, 2:00 PM Tayler's time"
+function bothTimes(date) {
+  return `${longDayIn(date, MY_TIME_ZONE)}\n${timeIn(date, MY_TIME_ZONE)} your time, ${timeIn(date, OTHER_TIME_ZONE)} ${OTHER}'s time`;
 }
 
 // A date like "Oct 26, 9:15 PM".
@@ -1810,25 +2160,569 @@ function formatDate(date) {
   return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-// ---------- The icons ----------
 
-// A pink book with a heart, for the guestbook.
-function drawGuestbookIcon(x, y) {
-  steppedBox(x - 15, y - 18, x + 15, y + 18, 2, COLORS.acceptFill, COLORS.text, 2);
-  ctx.fillStyle = COLORS.cream;
-  ctx.fillRect(x - 11, y - 14, 3, 28);     // the pages along the spine
-  drawPixels(HEART, x - 5, y - 6, 2, COLORS.white);
+// ---------- Dates you plan for each other ----------
+
+// Is it this person's turn to answer? (They didn't make the last change, and it's not accepted yet.)
+function needsMyAnswer(date) {
+  return date.status === "pending" && (date.proposedBy || date.from) !== ME;
 }
 
-// A little mailbox with a flag (pink when there's unread mail), for your inbox.
-function drawInboxIcon(x, y) {
-  steppedBox(x - 18, y - 12, x + 14, y + 10, 4, COLORS.screen, COLORS.text, 2);
+// Turns a date from Firebase into the same shape as the INVITES list, so the envelope,
+// letter, and buttons all work the same way.
+function remoteInvite(date) {
+  const when = date.when.toDate();
+  return {
+    id: `remote:${date.id}`,
+    remote: date,
+    date: dayIn(when, MY_TIME_ZONE),
+    label: when.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: MY_TIME_ZONE }),
+    opening: date.opening,
+    subtitle: date.subtitle,
+    title: date.title,
+    plan: date.plan,
+    bring: date.bring,
+    when: bothTimes(when),
+    declines: date.declines && date.declines.length ? date.declines : null,
+    colors: date.colors || null,
+  };
+}
+
+// The colors you can pick for an invite: [name in the code, label in the form].
+const INVITE_COLOR_CHOICES = [
+  ["screen", "Background"], ["text", "Words"], ["buttons", "Buttons"], ["paper", "Paper"],
+];
+const DEFAULT_INVITE_COLORS = {
+  screen: COLORS.screen, text: COLORS.text, buttons: COLORS.acceptFill, paper: COLORS.letterPaper,
+};
+
+// While an invite with its own colors is playing, the usual colors are swapped for its
+// colors, then put back afterwards.
+function withInviteColors(colors, job) {
+  if (!colors) return job();
+  const saved = { ...COLORS };
+  Object.assign(COLORS, {
+    screen: colors.screen, text: colors.text,
+    acceptFill: colors.buttons, heart: colors.buttons, envelopeLine: colors.buttons,
+    letterPaper: colors.paper, envelopePaper: colors.paper, cream: colors.paper,
+  });
+  try { return job(); } finally { Object.assign(COLORS, saved); }
+}
+
+// Every invite on this computer:
+//   - The ones written into this file (INVITES) are from you to him, so only HIS side has them.
+//   - Planned ones show up for whoever they were sent TO (and for the sender too, if the
+//     other person suggested a new time and it's their turn to answer).
+function allInvites() {
+  const written = IS_TAYLER ? [] : INVITES;
+  const planned = state.remoteDates.filter(date => date.when && (date.from === OTHER || needsMyAnswer(date)));
+  return [...written, ...planned.map(remoteInvite)];
+}
+
+function declinesFor(invite) {
+  return (invite && invite.declines) || DECLINE_MESSAGES;
+}
+
+// Saves a planned date to Firebase and pings the other person.
+async function sendDate(form) {
+  if (blockedInPreview()) throw new Error("preview");
+  const when = zonedTimeToDate(form.day, form.time, MY_TIME_ZONE);
+  await database.collection("dates").add({
+    from: ME,
+    to: OTHER,
+    opening: form.opening,
+    subtitle: form.subtitle,
+    title: form.title,
+    plan: form.plan,
+    bring: form.bring,
+    when: firebase.firestore.Timestamp.fromDate(when),
+    declines: form.declines,
+    colors: form.colors,
+    status: "pending",
+    proposedBy: null,
+    sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+  pingOther(`📅 ${ME} planned a date for you! Open the little computer to see it 💌`);
+}
+
+// Accepting a planned date.
+function acceptRemoteDate(date) {
+  if (blockedInPreview()) return;
+  database.collection("dates").doc(date.id).update({
+    status: "accepted",
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(problem => console.log("Couldn't accept:", problem));
+  pingOther(`🎉 ${ME} accepted your date! It's a date!`);
+}
+
+// Suggesting a new time for a planned date.
+async function rescheduleRemoteDate(date, day, time) {
+  if (blockedInPreview()) throw new Error("preview");
+  const when = zonedTimeToDate(day, time, MY_TIME_ZONE);
+  await database.collection("dates").doc(date.id).update({
+    when: firebase.firestore.Timestamp.fromDate(when),
+    proposedBy: ME,
+    status: "pending",
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+  pingOther(`🕐 ${ME} suggested a new time for your date: ${longDayIn(when, OTHER_TIME_ZONE)}, ${timeIn(when, OTHER_TIME_ZONE)} your time.`);
+}
+
+
+// ---------- The IM chat ----------
+
+// Every chat message, oldest first (his old Notepad notes first).
+function chatMessages() {
+  return [...state.oldNotes, ...state.ims];
+}
+
+async function sendIM(text) {
+  if (blockedInPreview()) throw new Error("preview");
+  await database.collection("IMs").add({
+    text,
+    from: ME,
+    sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+  playSound("paper", 0.6);
+  // Only ping once per chat burst.
+  let lastPing = 0;
+  try { lastPing = Number(localStorage.getItem(`${SIDE}:imPinged`)) || 0; } catch (problem) {}
+  if (Date.now() - lastPing > IM_PING_QUIET_MINUTES * 60000) {
+    pingOther(`💬 ${ME} sent you a message on the little computer!`);
+    try { localStorage.setItem(`${SIDE}:imPinged`, String(Date.now())); } catch (problem) {}
+  }
+}
+
+// Draws the chat: bubbles for each message (yours on the right in pink, theirs on the left),
+// and a typing box along the bottom.
+function drawIM(inside) {
+  if (state.online !== "ok") {
+    drawOnlineProblem(inside, `chat with ${OTHER}`);
+    return;
+  }
+
+  const chat = { left: inside.left + 4, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 32 };
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(chat.left, chat.top, chat.right - chat.left, chat.bottom - chat.top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(chat.left, chat.top, chat.right - chat.left, chat.bottom - chat.top);
+
+  // Work out every bubble's size first.
+  const lineHeight = 16;
+  const maxText = (chat.right - chat.left) * 0.7 - 16;
+  const bubbles = chatMessages().map(message => {
+    const lines = wrapWords(message.text, FONTS.note, maxText);
+    ctx.font = FONTS.note;
+    const textWidth = Math.max(...lines.map(line => ctx.measureText(line).width), 30);
+    return { message, lines, width: textWidth + 16, height: lines.length * lineHeight + 26 };
+  });
+  const contentHeight = bubbles.reduce((sum, bubble) => sum + bubble.height, 0) + 8;
+
+  // Scrolling: it stays at the newest message unless he's scrolled up to read older ones.
+  const wasAtBottom = state.imScroll >= state.imMaxScroll - 2;
+  state.imMaxScroll = Math.max(0, contentHeight - (chat.bottom - chat.top));
+  if (wasAtBottom) state.imScroll = state.imMaxScroll;
+  state.imScroll = keepBetween(state.imScroll, 0, state.imMaxScroll);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(chat.left + 1, chat.top + 1, chat.right - chat.left - 2, chat.bottom - chat.top - 2);
+  ctx.clip();
+  if (bubbles.length === 0) {
+    write(`Say hi to ${OTHER}!`, (chat.left + chat.right) / 2, (chat.top + chat.bottom) / 2, FONTS.body, COLORS.lostLife);
+  }
+  let y = chat.top + 6 - state.imScroll;
+  bubbles.forEach(({ message, lines, width, height }) => {
+    const mine = message.from === ME;
+    const left = mine ? chat.right - 8 - width : chat.left + 8;
+    // A tiny "name, time" line above the bubble.
+    write(`${message.from}, ${formatDate(message.sentAt)}`, mine ? chat.right - 8 : chat.left + 8, y + 5,
+          FONTS.tag, COLORS.text, mine ? "right" : "left");
+    steppedBox(left, y + 12, left + width, y + height - 4, 3,
+               mine ? COLORS.acceptFill : COLORS.cream, COLORS.text, 1.5);
+    lines.forEach((line, number) => {
+      write(line, left + 8, y + 16 + number * lineHeight, FONTS.note, mine ? COLORS.acceptText : COLORS.text, "left", "top");
+    });
+    y += height;
+  });
+  ctx.restore();
+
+  // A little scrollbar when there's more to scroll to.
+  if (state.imMaxScroll > 0) {
+    const track = chat.bottom - chat.top - 4;
+    const thumb = Math.max(16, track * (chat.bottom - chat.top) / contentHeight);
+    ctx.fillStyle = COLORS.acceptFill;
+    ctx.fillRect(chat.right - 6, chat.top + 2 + (track - thumb) * state.imScroll / state.imMaxScroll, 4, thumb);
+  }
+
+  // The typing box is a real text box (so phones get a keyboard), placed on top of the drawing.
+  requestPanel("im", { left: inside.left + 4, top: inside.bottom - 28, right: inside.right - 4, bottom: inside.bottom - 4 });
+
+  // While the chat is the window on top, everything in it counts as read.
+  if (state.windowOnTop) {
+    const newest = state.ims.filter(message => message.from !== ME).pop();
+    if (newest && newest.sentAt.getTime() > lastSeenIM()) {
+      try { localStorage.setItem(`${SIDE}:imSeen`, String(newest.sentAt.getTime())); } catch (problem) {}
+    }
+  }
+}
+
+
+// ---------- The "Plan a date" window ----------
+
+function drawPlan(inside) {
+  if (state.online !== "ok") {
+    drawOnlineProblem(inside, `plan a date for ${OTHER}`);
+    return;
+  }
+  // The whole form is real text boxes and a real calendar, placed on top of the drawing.
+  requestPanel("plan", inside);
+}
+
+
+// ---------- When the online windows can't connect ----------
+
+function drawOnlineProblem(inside, what) {
+  const middle = (inside.left + inside.right) / 2;
+  const say = (text, y, font = FONTS.note, color = COLORS.text) => {
+    wrapWords(text, font, inside.right - inside.left - 40).forEach((line, number) => {
+      write(line, middle, y + number * 18, font, color);
+    });
+  };
+  if (state.online === "connecting") {
+    say("Connecting...", inside.top + 90, FONTS.body);
+  } else if (state.online === "offline") {
+    say("Can't connect right now. Check your internet?", inside.top + 90);
+  } else if (state.online === "signin" || state.online === "wrongaccount") {
+    drawPixels(LOCK, middle - 10, inside.top + 20, 4, COLORS.text);
+    say(`Sign in to ${what}`, inside.top + 66, FONTS.body);
+    if (state.online === "wrongaccount") say("That Google account isn't allowed. Try yours?", inside.top + 90, FONTS.tag, COLORS.newTag);
+    drawButton(middle, inside.top + 130, 200, 30, "Sign in with Google", COLORS.acceptFill, COLORS.acceptText, signIn);
+  } else if (state.online === "unpaired") {
+    drawPixels(LOCK, middle - 10, inside.top + 20, 4, COLORS.text);
+    say(`This computer isn't connected yet. Ask ${YOUR_NAME} for your special link!`, inside.top + 70);
+  }
+}
+
+
+// ---------- Real text boxes on top of the drawing ----------
+//
+// The canvas can't make a phone keyboard pop up, and it can't show a calendar. So these
+// parts are real web-page boxes, placed exactly on top of the right window each frame.
+
+const ui = document.getElementById("ui");
+const panels = {};
+let panelRequests = {};
+
+// Is he typing in one of the real text boxes? (Then keys shouldn't jump or pause games.)
+function isTypingInForm(event) {
+  return /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+}
+
+// A window asks for its panel to be shown, in this spot, this frame.
+function requestPanel(name, box) {
+  panelRequests[name] = { box, onTop: state.windowOnTop };
+}
+
+// After drawing, show the requested panels in the right spots, and hide the rest.
+function placePanels() {
+  const rect = canvas.getBoundingClientRect();
+  ui.style.left = `${rect.left}px`;
+  ui.style.top = `${rect.top}px`;
+  ui.style.transform = `scale(${rect.width / WIDTH})`;
+  Object.entries(panels).forEach(([name, panel]) => {
+    const request = panelRequests[name];
+    // Only for the window on top (or, for "Suggest a new time", on the date's letter),
+    // and not while a pop-up, menu, or screensaver is in the way.
+    const inRightPlace = name === "reschedule" ? state.mode === "invite"
+                                               : request && request.onTop && state.mode === "desktop";
+    const show = request && inRightPlace && !state.popup && !state.startMenu &&
+                 !state.powerMenu && !state.screensaver;
+    if (show) {
+      Object.assign(panel.style, {
+        display: "block",
+        left: `${request.box.left}px`, top: `${request.box.top}px`,
+        width: `${request.box.right - request.box.left}px`, height: `${request.box.bottom - request.box.top}px`,
+      });
+    } else {
+      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      panel.style.display = "none";
+    }
+  });
+  panelRequests = {};
+}
+
+// Makes a panel from some HTML.
+function makePanel(name, html) {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.innerHTML = html;
+  ui.appendChild(panel);
+  panels[name] = panel;
+  return panel;
+}
+
+// Turns a pixel emoji into a little picture the web page can show (for the emoji menu).
+function emojiPicture(emoji) {
+  const { rows, colors } = EMOJI_PIXELS[emoji];
+  const picture = document.createElement("canvas");
+  picture.width = rows[0].length * 3;
+  picture.height = rows.length * 3;
+  const pen = picture.getContext("2d");
+  rows.forEach((row, rowNumber) => [...row].forEach((letter, columnNumber) => {
+    if (!colors[letter]) return;
+    pen.fillStyle = colors[letter];
+    pen.fillRect(columnNumber * 3, rowNumber * 3, 3, 3);
+  }));
+  return picture.toDataURL();
+}
+
+// The IM typing box, with a heart button that opens the pixel emoji menu.
+const imPanel = makePanel("im", `
+  <div class="picker" hidden>
+    ${Object.keys(EMOJI_PIXELS).map(emoji =>
+      `<button type="button" data-emoji="${emoji}"><img src="${emojiPicture(emoji)}" alt="${emoji}"></button>`).join("")}
+  </div>
+  <form class="im-row">
+    <button type="button" class="emoji-button" title="Emojis"><img src="${emojiPicture("💗")}" alt="emojis"></button>
+    <input name="text" maxlength="${IM_MAX}" placeholder="Type a message..." autocomplete="off">
+    <button>Send</button>
+  </form>`);
+
+// The heart button opens and closes the emoji menu.
+const emojiMenu = imPanel.querySelector(".picker");
+imPanel.querySelector(".emoji-button").addEventListener("click", () => {
+  playSound("click");
+  emojiMenu.hidden = !emojiMenu.hidden;
+});
+// Clicking an emoji adds it to the message (and closes the menu).
+emojiMenu.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  playKeySound(0.3);
+  const box = imPanel.querySelector("input");
+  box.value += button.dataset.emoji;
+  emojiMenu.hidden = true;
+  box.focus();
+});
+imPanel.querySelector("form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const box = imPanel.querySelector("input");
+  const text = box.value.trim();
+  if (!text) return;
+  box.value = "";
+  try {
+    await sendIM(text);
+  } catch (problem) {
+    console.log("Couldn't send:", problem);
+    box.value = text;
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+imPanel.querySelector("input").addEventListener("keydown", () => playKeySound(0.25));
+
+// The "Plan a date" form. Everything starts filled in with the usual words, so he only
+// has to change what he wants.
+const escapeHTML = text => text.replace(/[&<>"]/g, letter => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[letter]);
+const planPanel = makePanel("plan", `
+  <form class="plan">
+    <div class="sent" hidden>
+      <p class="big">Sent! 💌</p>
+      <p>It's on ${OTHER}'s desktop now.</p>
+      <button type="button" class="again">Plan another</button>
+    </div>
+    <div class="fields">
+      <label>Opening message <input name="opening" maxlength="60" value="${escapeHTML(`Psst, ${OTHER}...`)}"></label>
+      <label>Line under it <input name="subtitle" maxlength="80" value="${escapeHTML(GREETING_SUBTITLE)}"></label>
+      <label>Title <input name="title" maxlength="40" value="${escapeHTML(`${OTHER}, be my date?`)}"></label>
+      <label>Plan <input name="plan" maxlength="80" placeholder="Top secret"></label>
+      <label>What to bring <input name="bring" maxlength="80" placeholder="Your cute self"></label>
+      <div class="two">
+        <label>Day <input name="day" type="date" required></label>
+        <label>Time (yours) <input name="time" type="time" step="900" value="21:00" required></label>
+      </div>
+      <p class="hint"></p>
+      <p class="section">Decline jokes (one for each time they click Decline)</p>
+      ${DECLINE_MESSAGES.map((joke, number) =>
+        `<input name="decline${number}" maxlength="70" value="${escapeHTML(joke)}">`).join("")}
+      <p class="section">Colors</p>
+      <div class="colors">
+        ${INVITE_COLOR_CHOICES.map(([key, label]) =>
+          `<label><input name="color-${key}" type="color" value="${DEFAULT_INVITE_COLORS[key]}"> ${label}</label>`).join("")}
+      </div>
+      <p class="problem"></p>
+      <div class="two">
+        <button type="button" class="preview cancel">Preview</button>
+        <button>Send invite</button>
+      </div>
+    </div>
+  </form>`);
+
+const planForm = planPanel.querySelector("form");
+
+// Under the time: what that time is for the other person.
+function updatePlanHint() {
+  const { day, time } = planForm.elements;
+  const hint = planPanel.querySelector(".hint");
+  if (!day.value || !time.value) {
+    hint.textContent = "";
+    return;
+  }
+  const when = zonedTimeToDate(day.value, time.value, MY_TIME_ZONE);
+  hint.textContent = `That's ${timeIn(when, OTHER_TIME_ZONE)} on ${longDayIn(when, OTHER_TIME_ZONE)} for ${OTHER}.`;
+}
+planForm.addEventListener("input", updatePlanHint);
+
+// Everything filled into the form (with the usual words for anything left empty).
+function planFormValues() {
+  const field = name => planForm.elements[name].value.trim();
+  const colors = {};
+  INVITE_COLOR_CHOICES.forEach(([key]) => { colors[key] = field(`color-${key}`); });
+  return {
+    opening: field("opening") || `Psst, ${OTHER}...`,
+    subtitle: field("subtitle"),
+    title: field("title") || `${OTHER}, be my date?`,
+    plan: field("plan") || "Top secret",
+    bring: field("bring") || "Your cute self",
+    day: field("day"),
+    time: field("time"),
+    declines: DECLINE_MESSAGES.map((joke, number) => field(`decline${number}`) || joke),
+    colors,
+  };
+}
+
+// The Preview button plays the invite right here, just for you (nothing gets sent).
+planPanel.querySelector(".preview").addEventListener("click", () => {
+  const form = planFormValues();
+  const when = form.day && form.time ? zonedTimeToDate(form.day, form.time, MY_TIME_ZONE) : null;
+  openInvite({
+    id: "preview",
+    preview: true,
+    opening: form.opening,
+    subtitle: form.subtitle,
+    title: form.title,
+    plan: form.plan,
+    bring: form.bring,
+    // (The preview shows the time the way the other person will see it.)
+    when: when ? `${longDayIn(when, OTHER_TIME_ZONE)}\n${timeIn(when, OTHER_TIME_ZONE)} your time, ${timeIn(when, MY_TIME_ZONE)} ${ME}'s time`
+               : "(pick a day and time)",
+    declines: form.declines,
+    colors: form.colors,
+  });
+});
+
+planForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = planFormValues();
+  const problem = planPanel.querySelector(".problem");
+  if (!form.day || !form.time) {
+    problem.textContent = "Pick a day and a time!";
+    return;
+  }
+  problem.textContent = "Sending...";
+  try {
+    await sendDate(form);
+    problem.textContent = "";
+    playSound("win", 0.5);
+    planPanel.querySelector(".sent").hidden = false;
+    planPanel.querySelector(".fields").hidden = true;
+  } catch (trouble) {
+    console.log("Couldn't send the date:", trouble);
+    problem.textContent = "Couldn't send. Try again?";
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+
+planPanel.querySelector(".again").addEventListener("click", () => {
+  playSound("click");
+  planForm.reset();
+  updatePlanHint();
+  planPanel.querySelector(".sent").hidden = true;
+  planPanel.querySelector(".fields").hidden = false;
+});
+
+// The "Suggest a new time" box, shown on top of a planned date's letter.
+const reschedulePanel = makePanel("reschedule", `
+  <form class="reschedule">
+    <p class="big">Suggest a new time</p>
+    <div class="two">
+      <label>Day <input name="day" type="date" required></label>
+      <label>Time (yours) <input name="time" type="time" step="900" required></label>
+    </div>
+    <p class="hint"></p>
+    <div class="two">
+      <button type="button" class="cancel">Cancel</button>
+      <button>Send</button>
+    </div>
+  </form>`);
+const rescheduleForm = reschedulePanel.querySelector("form");
+
+rescheduleForm.addEventListener("input", () => {
+  const { day, time } = rescheduleForm.elements;
+  const hint = reschedulePanel.querySelector(".hint");
+  hint.textContent = day.value && time.value
+    ? `That's ${timeIn(zonedTimeToDate(day.value, time.value, MY_TIME_ZONE), OTHER_TIME_ZONE)} for ${OTHER}.` : "";
+});
+
+reschedulePanel.querySelector(".cancel").addEventListener("click", () => {
+  playSound("click");
+  state.rescheduling = null;
+});
+
+rescheduleForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const { day, time } = rescheduleForm.elements;
+  const date = state.rescheduling;
+  try {
+    await rescheduleRemoteDate(date, day.value, time.value);
+    state.rescheduling = null;
+    playSound("win", 0.5);
+    closeInvite();
+    showPopup("NEW TIME", `New time sent! ${OTHER} will see it on their desktop.`);
+  } catch (problem) {
+    console.log("Couldn't reschedule:", problem);
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+
+// Opens the "Suggest a new time" box, starting at the date's current day and time.
+function openReschedule(date) {
+  playSound("click");
+  const when = date.when.toDate();
+  rescheduleForm.elements.day.value = dayIn(when, MY_TIME_ZONE);
+  const parts = zonedParts(when, MY_TIME_ZONE);
+  rescheduleForm.elements.time.value = `${parts.hour}:${parts.minute}`;
+  rescheduleForm.dispatchEvent(new Event("input"));
+  state.rescheduling = date;
+}
+
+
+// ---------- The icons ----------
+
+// A little calendar page with a heart, for "Plan a date".
+function drawPlanIcon(x, y) {
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(x - 16, y - 15, 32, 31);
+  ctx.fillStyle = COLORS.acceptFill;
+  ctx.fillRect(x - 16, y - 15, 32, 9);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - 16, y - 15, 32, 31);
   ctx.fillStyle = COLORS.text;
-  ctx.fillRect(x - 2, y + 10, 4, 10);        // the post
-  ctx.fillRect(x + 14, y - 16, 2, 14);       // the flag pole
-  ctx.fillStyle = unreadMessages().length ? COLORS.heart : COLORS.lostLife;
-  ctx.fillRect(x + 16, y - 16, 8, 6);        // the flag
-  drawSmallEnvelope(x - 2, y, false);
+  ctx.fillRect(x - 10, y - 19, 3, 6);    // the rings on top
+  ctx.fillRect(x + 7, y - 19, 3, 6);
+  drawPixels(HEART, x - 7, y - 2, 2, COLORS.heart);
+}
+
+// Two chat bubbles, for IM.
+function drawIMIcon(x, y) {
+  steppedBox(x - 18, y - 16, x + 8, y + 2, 3, COLORS.white, COLORS.text, 2);
+  steppedBox(x - 6, y - 4, x + 18, y + 14, 3, COLORS.acceptFill, COLORS.text, 2);
+  ctx.fillStyle = COLORS.text;
+  [-12, -6, 0].forEach(dx => ctx.fillRect(x + dx, y - 8, 2, 2));
+  drawPixels(HEART, x - 1, y + 2, 1, COLORS.white);
 }
 
 // The love note, like an old Notepad window.
@@ -1936,7 +2830,7 @@ function memorySpot(inside, number) {
 // Invitations: an envelope for every date that's already happened.
 // Memories never say NEW, but keep the check if he accepted.
 function drawMemoryInvites(inside) {
-  const memories = INVITES.filter(isPast);
+  const memories = allInvites().filter(isPast);
   if (memories.length === 0) {
     drawEmptyFolderMessage(inside, "No past dates yet...", "but not for long!");
     return;
@@ -1955,6 +2849,7 @@ function noteIsRead(note) {
 
 // The love notes he's already read, newest first.
 function readNotes() {
+  if (IS_TAYLER) return [];   // your love notes are for him, so they're only on his side
   return LOVE_NOTES.filter(noteIsRead).reverse();
 }
 
@@ -2332,11 +3227,12 @@ function drawGamesFolder(area) {
 }
 
 // The mouse wheel scrolls the Arcade when it has more games than fit.
-canvas.addEventListener("wheel", event => {
+// (It scrolls whichever window the mouse is over.)
+canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
   if (state.window !== "games" || !state.launcherMaxScroll) return;
   event.preventDefault();   // scroll the Arcade, not the web page
   state.launcherScroll = keepBetween((state.launcherScroll || 0) + event.deltaY * 0.5, 0, state.launcherMaxScroll);
-}, { passive: false });
+}), { passive: false });
 
 // Starts (or restarts) the game in the open window.
 function startGame() {
@@ -2352,7 +3248,9 @@ function gameAction() {
   if (game && game.playing && GAMES[game.key].action) GAMES[game.key].action(game);
 }
 
-window.addEventListener("keydown", event => {
+// (Keys go to the game in the window on top.)
+window.addEventListener("keydown", event => withWindow(topWindow(), () => {
+  if (isTypingInForm(event)) return;
   const game = state.game;
   if (!game || !game.playing) return;
 
@@ -2364,7 +3262,7 @@ window.addEventListener("keydown", event => {
   if (event.code !== "Space" && event.code !== "ArrowUp") return;
   event.preventDefault();   // stop Space from scrolling the page
   if (!game.paused) gameAction();
-});
+}));
 
 // Pauses or unpauses the game that's playing.
 function togglePause() {
@@ -2741,7 +3639,7 @@ function flipCard(game, number) {
     playSound("coin", 0.6);
     if (game.cards.every(c => c.matched)) {
       setTimeout(() => {
-        if (state.game !== game) return;   // he already closed the window
+        if (!state.windows.some(win => win.game === game)) return;   // he already closed the window
         playSound("win");
         endGame(game, "You found them all!", `It took you ${game.moves} moves.`, game.moves);
       }, 500);
@@ -2911,9 +3809,22 @@ function drawLetter() {
     y += lines.length * lineHeight + 3;
   });
 
+  // A planned date that's already accepted, or waiting on the other person: no buttons, just a note.
+  const date = invite.remote;
+  if (date && !needsMyAnswer(date)) {
+    const note = date.status === "accepted" ? "It's a date!"
+                                            : `Waiting for ${OTHER} to answer...`;
+    write(note, CENTER_X, 322, FONTS.celebrationSubtitle, COLORS.text);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  if (date && date.proposedBy) {
+    write(`${date.proposedBy} suggested this new time!`, CENTER_X, 290, FONTS.small, COLORS.newTag);
+  }
+
   // The buttons.
   drawButton(316, 316, 120, 36, "Accept", COLORS.acceptFill, COLORS.acceptText, accept);
-  if (state.declines >= DECLINE_MESSAGES.length) {
+  if (state.declines >= declinesFor(invite).length) {
     // Out of jokes: Decline has turned into another Accept!
     drawButton(452, 316, 120, 36, "Accept", COLORS.acceptFill, COLORS.acceptText, accept);
   } else {
@@ -2926,7 +3837,10 @@ function drawLetter() {
   ctx.fillStyle = COLORS.text;
   ctx.fillRect(CENTER_X - linkWidth / 2, 353, linkWidth, 1);
   hitBoxes.push({ left: CENTER_X - linkWidth / 2, top: 338, right: CENTER_X + linkWidth / 2, bottom: 356,
-                  onClick: suggest });
+                  onClick: suggestOrReschedule });
+
+  // The "Suggest a new time" box, on top of the letter.
+  if (state.rescheduling) requestPanel("reschedule", { left: 254, top: 150, right: 514, bottom: 300 });
 
   ctx.globalAlpha = 1;
 }
@@ -3026,39 +3940,57 @@ function draw(time) {
   hitBoxes = [];
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
+  drawVase(time);
 
-  // Paint the screen blue all the way to the cream frame, covering the picture's
-  // dark gray edge. (The desktop's wallpaper covers it instead.)
-  if (state.mode !== "desktop") {
-    ctx.fillStyle = COLORS.screen;
-    ctx.beginPath();
-    ctx.roundRect(SCREEN.left, SCREEN.top, SCREEN.right - SCREEN.left, SCREEN.bottom - SCREEN.top, SCREEN.corner);
-    ctx.fill();
-  }
+  // A planned invite can have its own colors (see withInviteColors).
+  const inviteColors = state.mode === "invite" && state.invite ? state.invite.colors : null;
+  withInviteColors(inviteColors, () => {
+    // Paint the screen blue all the way to the cream frame, covering the picture's
+    // dark gray edge. (The desktop's wallpaper covers it instead.)
+    if (state.mode !== "desktop") {
+      ctx.fillStyle = COLORS.screen;
+      ctx.beginPath();
+      ctx.roundRect(SCREEN.left, SCREEN.top, SCREEN.right - SCREEN.left, SCREEN.bottom - SCREEN.top, SCREEN.corner);
+      ctx.fill();
+    }
 
-  if (state.mode === "start") {
-    // Just the MWAHHH button and its words, nothing else.
-    drawStartMessage(time);
-  } else if (state.mode === "desktop") {
-    drawDesktop(time);
-  } else {
-    drawTitleBar();
-    drawSparkles();
-    write(state.title, CENTER_X, 170, FONTS.title, COLORS.text);
-    write(state.subtitle, CENTER_X, 218, FONTS.body, COLORS.text);
-    if (state.envelope) drawEnvelope();
-    else drawPaper();
-    if (state.letter) drawLetter();
-    if (state.celebration) drawCelebration();
-    drawConfetti();
-  }
+    if (state.mode === "start") {
+      // Just the MWAHHH button and its words, nothing else.
+      drawStartMessage(time);
+    } else if (state.mode === "desktop") {
+      drawDesktop(time);
+    } else {
+      drawTitleBar();
+      drawSparkles();
+      write(state.title, CENTER_X, 170, FONTS.title, COLORS.text);
+      write(state.subtitle, CENTER_X, 218, FONTS.body, COLORS.text);
+      if (state.envelope) drawEnvelope();
+      else drawPaper();
+      if (state.letter) drawLetter();
+      if (state.celebration) drawCelebration();
+      drawConfetti();
+    }
+
+    // Pop-ups during an invite use its colors too.
+    if (state.mode === "invite") {
+      showWaitingPopups();
+      if (state.popup) drawPopup();
+    }
+  });
 
   // The computer's power button (next to the green light) shows the "Shut down" joke.
   hitBoxes.push({ left: 610, top: 390, right: 640, bottom: 412,
                   onClick: () => showPopup("SHUT DOWN", SHUT_DOWN_MESSAGE) });
 
-  // Pop-ups go on top of everything.
-  if (state.popup) drawPopup();
+  // Pop-ups go on top of everything. (New messages and dates that came in while a
+  // pop-up was already showing wait their turn.)
+  if (state.mode !== "invite") {
+    showWaitingPopups();
+    if (state.popup) drawPopup();
+  }
+
+  // The real text boxes (IM, Plan a date, Suggest a new time) go where their windows are.
+  placePanels();
 
   // The screensaver goes on top of even the pop-ups.
   updateScreensaver(time);
@@ -3149,7 +4081,8 @@ const HEART_CURSOR = makeCursor(HEART_CURSOR_PIXELS, 2, 11, 6, "pointer");
 // Picks the cursor (pixel ones on the computer screen), and lifts the envelope when hovered.
 function updateMouse() {
   const box = boxUnderMouse();
-  const clickable = box && !box.blocker;
+  // (Title bars you can drag show the normal arrow, not the "click me" heart.)
+  const clickable = box && !box.blocker && !box.dragWin;
   if (mouseIsIn(SCREEN)) canvas.style.cursor = clickable ? HEART_CURSOR : ARROW_CURSOR;
   else canvas.style.cursor = clickable ? "pointer" : "default";
   // Remember which icon is on top under the mouse, so only that one lights up next time.
@@ -3199,7 +4132,7 @@ function wakeUp() {
 // never in the middle of a game.
 function updateScreensaver(time) {
   if (state.screensaver) return;
-  const playing = state.game && state.game.playing;
+  const playing = state.windows.some(win => win.game && win.game.playing && !win.game.paused && !win.minimized);
   if (state.mode !== "desktop" || playing) {
     lastActivity = time;
     return;
@@ -3266,7 +4199,15 @@ function handleClick() {
   if (!box || !box.keepsMenu) state.startMenu = false;
   // The power menu closes on any click except the power button itself.
   if (!box || box.id !== "power") state.powerMenu = false;
-  if (box) box.onClick();
+  if (!box) return;
+
+  // Clicking inside a window brings it to the front, and loads it so the click works on it.
+  if (box.win && state.windows.includes(box.win)) {
+    focusWindow(box.win);
+    loadWindow(box.win);
+  }
+  box.onClick();
+  unloadWindow();
 }
 
 // FINGER SCROLLING (on phones and tablets): dragging up and down scrolls the
@@ -3284,37 +4225,72 @@ function scrollableList() {
   if (state.window === "games" && state.launcherMaxScroll) {
     return { key: "launcherScroll", max: state.launcherMaxScroll };
   }
+  if (state.window === "im" && state.imMaxScroll) {
+    return { key: "imScroll", max: state.imMaxScroll };
+  }
   return null;
 }
+
+// The mouse wheel scrolls the IM chat (whichever window the mouse is over).
+canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
+  if (state.window !== "im" || !state.imMaxScroll) return;
+  event.preventDefault();
+  state.imScroll = keepBetween(Math.min(state.imScroll, state.imMaxScroll) + event.deltaY * 0.5, 0, state.imMaxScroll);
+}), { passive: false });
 
 canvas.addEventListener("pointermove", event => {
   state.mouse = toDrawing(event);
   stillHere();
 
+  // Dragging a window: it follows the mouse, but can't go fully off the screen
+  // (the title bar always stays where he can grab it).
+  if (dragging) {
+    dragging.win.x = keepBetween(state.mouse.x - dragging.dx, SCREEN.left - WINDOW_WIDTH + 80, SCREEN.right - 80);
+    dragging.win.y = keepBetween(state.mouse.y - dragging.dy, SCREEN.top, TASKBAR.top - 24);
+    return;
+  }
+
   if (touch) {
     // Moved more than a few pixels? Then it's a drag, not a tap.
     if (Math.abs(state.mouse.y - touch.startY) > 6 || Math.abs(state.mouse.x - touch.startX) > 6) touch.moved = true;
-    const list = scrollableList();
-    if (touch.moved && list) {
-      // Dragging up scrolls down (the list follows the finger).
-      state[list.key] = keepBetween((state[list.key] || 0) + (touch.y - state.mouse.y), 0, list.max);
-    }
+    withWindow(touch.win, () => {
+      const list = scrollableList();
+      if (touch.moved && list) {
+        // Dragging up scrolls down (the list follows the finger).
+        state[list.key] = keepBetween((state[list.key] || 0) + (touch.y - state.mouse.y), 0, list.max);
+      }
+    });
     touch.y = state.mouse.y;
   }
 });
 
 canvas.addEventListener("pointerdown", event => {
   state.mouse = toDrawing(event);
+
+  // Grabbing a window's title bar starts dragging it.
+  const box = state.screensaver || state.popup ? null : boxUnderMouse();
+  if (box && box.dragWin) {
+    state.startMenu = false;
+    focusWindow(box.dragWin);
+    dragging = { win: box.dragWin, dx: state.mouse.x - box.dragWin.x, dy: state.mouse.y - box.dragWin.y };
+    return;
+  }
+
   // While playing a game, taps count right away (so jumping isn't late).
-  const playing = state.game && state.game.playing;
+  const top = topWindow();
+  const playing = top && top.game && top.game.playing && !top.game.paused;
   if (event.pointerType === "touch" && !playing) {
-    touch = { y: state.mouse.y, startX: state.mouse.x, startY: state.mouse.y, moved: false };
+    touch = { y: state.mouse.y, startX: state.mouse.x, startY: state.mouse.y, moved: false, win: windowUnderMouse() };
     return;
   }
   handleClick();
 });
 
 canvas.addEventListener("pointerup", event => {
+  if (dragging) {
+    dragging = null;
+    return;
+  }
   if (!touch) return;
   const wasTap = !touch.moved;
   touch = null;
@@ -3323,7 +4299,7 @@ canvas.addEventListener("pointerup", event => {
     handleClick();
   }
 });
-canvas.addEventListener("pointercancel", () => { touch = null; });
+canvas.addEventListener("pointercancel", () => { touch = null; dragging = null; });
 
 // Opens or closes the Start menu.
 function toggleStartMenu() {
@@ -3333,34 +4309,58 @@ function toggleStartMenu() {
 
 // Opens a window on the desktop: "notes", "memories", "games" (the launcher),
 // or a game, like "game:run".
+//
+// If that window is already open, it just comes to the front. Picking a game in the
+// Arcade turns that same window into the game.
 function openWindow(name) {
   playSound("click");
-  state.window = name;
-  state.game = name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null;
-  // "Open when..." and the Arcade start full screen (he can shrink them with the button).
-  // Games keep whatever size the Arcade was. Everything else starts normal size.
-  if (name === "openwhen" || name === "games") state.maximized = true;
-  else if (!state.game) state.maximized = false;
-  // Start fresh: the letter list (not an open letter), and an empty password box.
-  state.openWhen = null;
-  state.noteId = null;
-  state.inboxMessage = null;
-  if (state.guestStatus === "sent" || state.guestStatus === "error") state.guestStatus = "";
-  state.memoriesFolder = null;
-  state.memoryItem = null;
-  state.password = "";
-  state.passwordWrong = false;
+
+  // A game opened from inside the Arcade window: that window becomes the game.
+  if (name.startsWith("game:") && loadedWindow && state.window === "games") {
+    state.window = name;
+    state.game = { key: name.slice(5), playing: false, over: false };
+    return;
+  }
+
+  // Already open? Bring it to the front. (The Arcade and its games count as the same window.)
+  const family = kind => (kind.startsWith("game:") ? "games" : kind);
+  const existing = state.windows.find(win => family(win.window) === family(name));
+  if (existing) {
+    focusWindow(existing);
+    loadWindow(existing);
+    return;
+  }
+
+  // A brand new window. Each new one opens a little lower and to the right of the last,
+  // so they don't all stack exactly on top of each other.
+  const step = state.windows.length % 5;
+  const win = {
+    ...WINDOW_DEFAULTS,
+    window: name,
+    game: name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null,
+    // "Open when..." and the Arcade start full screen (he can shrink them with the button).
+    maximized: name === "openwhen" || name === "games",
+    x: 200 + step * 20,
+    y: 64 + step * 10,
+    minimized: false,
+  };
+  state.windows.push(win);
+  focusWindow(win);
+  loadWindow(win);
 }
 
-// Closing a game goes back to the launcher. Closing anything else goes back to the desktop.
+// Closing a game goes back to the Arcade. Closing anything else closes the window.
 function closeWindow() {
   playSound("click");
-  state.window = state.game ? "games" : null;
-  state.game = null;
-  // A love note he just read moves off the desktop (into Memories) once it's closed.
-  state.noteId = null;
-  // Fully closed: the next window opens at normal size again.
-  if (!state.window) state.maximized = false;
+  if (state.game) {
+    state.window = "games";
+    state.game = null;
+    return;
+  }
+  // Take this window out of the list. (A love note he just read moves into Memories.)
+  state.windows = state.windows.filter(win => win !== loadedWindow);
+  loadedWindow = null;
+  Object.assign(state, WINDOW_DEFAULTS);
 }
 
 // Shows a pop-up on the desktop.
@@ -3375,6 +4375,7 @@ function start() {
   audio.resume();
   playSound("click");
   state.mode = "desktop";
+  // (Any new messages or dates that came in while the start screen was up show next.)
 }
 
 // Clears away everything from an invite, and stops anything still animating.
@@ -3382,7 +4383,7 @@ function resetInvite() {
   currentRun += 1;
   Object.assign(state, {
     title: "", subtitle: "", envelope: null, paper: null, flaps: null, letter: null,
-    declines: 0, popup: null, celebration: null, confetti: [],
+    declines: 0, popup: null, celebration: null, confetti: [], rescheduling: null,
   });
 }
 
@@ -3394,6 +4395,13 @@ function openInvite(invite) {
   state.invite = invite;
   state.mode = "invite";
   startShow();
+}
+
+// "Suggest a new time": for a planned date, a real calendar to pick from. For the
+// invites written into this file, the old pop-up ("message me on Discord").
+function suggestOrReschedule() {
+  if (state.invite && state.invite.remote) openReschedule(state.invite.remote);
+  else suggest();
 }
 
 // He clicked the X (or "Back to desktop"): close the invite.
@@ -3420,8 +4428,10 @@ async function typeText(where, words, delay, volume) {
 // 1. Type the greeting, then fade in the envelope.
 async function startShow() {
   await wait(300);
-  await typeText("title", `Psst, ${RECIPIENT_NAME}...`, 120, 1);
-  await typeText("subtitle", GREETING_SUBTITLE, 55, FAST_TYPING_VOLUME);
+  // A planned date has its own opening words. The invites in this file use the usual ones.
+  const invite = state.invite;
+  await typeText("title", invite.opening || `Psst, ${RECIPIENT_NAME}...`, 120, 1);
+  await typeText("subtitle", invite.subtitle !== undefined ? invite.subtitle : GREETING_SUBTITLE, 55, FAST_TYPING_VOLUME);
   await wait(800);
 
   state.envelope = { alpha: 0, lift: 0, open: 0, seal: true, opening: false, clickable: true };
@@ -3494,7 +4504,7 @@ async function unfoldLetter() {
 function decline() {
   playSound("click");
   playSound("buzzer", BUZZER_VOLUME);
-  const message = DECLINE_MESSAGES[state.declines];
+  const message = declinesFor(state.invite)[state.declines];
   state.declines += 1;
   state.popup = { title: "ERROR", message };
 }
@@ -3515,6 +4525,8 @@ function accept() {
   playSound("click");
   playSound("chime", CHIME_VOLUME);
   remember(`accepted:${state.invite.id}`);
+  // A planned date: tell Firebase (and ping the other person on Discord).
+  if (state.invite.remote) acceptRemoteDate(state.invite.remote);
   state.letter = null;
   state.paper = null;
   state.celebration = { alpha: 0 };
