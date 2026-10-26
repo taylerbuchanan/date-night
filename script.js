@@ -109,6 +109,26 @@ const COLORS = {
   lostLife: "#C9C2CF",        // a grayed-out heart, for a lost life
 };
 
+// Little icons for the power menu.
+const POWER_ICON = [
+  "...X...",
+  ".X.X.X.",
+  "X..X..X",
+  "X.....X",
+  "X.....X",
+  ".X...X.",
+  "..XXX..",
+];
+const MOON_ICON = [
+  "..XXX..",
+  ".XX....",
+  "XX.....",
+  "XX.....",
+  "XX....X",
+  ".XX.XX.",
+  "..XXX..",
+];
+
 // A little pixel checkmark, for invites he's accepted.
 const CHECK = [
   ".....X",
@@ -690,13 +710,18 @@ const START_MENU = [
   { text: "Memories", onClick: () => openWindow("memories") },
   { text: "Arcade", onClick: () => openWindow("games") },
   { text: `Miss ${YOUR_NAME}`, onClick: () => showPopup("MESSAGE", MISS_YOU_MESSAGE) },
-  { text: "Shut down", onClick: () => showPopup("SHUT DOWN", SHUT_DOWN_MESSAGE) },
 ];
 
-// The Start menu, popping up above the Start button.
+// The little menu that pops up from the power button, like a real Windows computer.
+const POWER_MENU = [
+  { text: "Sleep", picture: MOON_ICON, onClick: goToSleep },
+  { text: "Shut down", picture: POWER_ICON, onClick: () => showPopup("SHUT DOWN", SHUT_DOWN_MESSAGE) },
+];
+
+// The Start menu, popping up above the Start button, with a power button along the bottom.
 function drawStartMenu() {
-  const left = TASKBAR.left + 3, width = 160, itemHeight = 24;
-  const bottom = TASKBAR.top, top = bottom - START_MENU.length * itemHeight - 8;
+  const left = TASKBAR.left + 3, width = 160, itemHeight = 24, powerRow = 28;
+  const bottom = TASKBAR.top, top = bottom - START_MENU.length * itemHeight - 8 - powerRow;
 
   ctx.fillStyle = COLORS.text;                              // shadow
   ctx.fillRect(left + 4, top + 4, width, bottom - top);
@@ -711,19 +736,64 @@ function drawStartMenu() {
 
   START_MENU.forEach((item, number) => {
     const itemTop = top + 4 + number * itemHeight;
-    const box = { left: left + 20, top: itemTop, right: left + width, bottom: itemTop + itemHeight, onClick: item.onClick };
+    const box = { left: left + 20, top: itemTop, right: left + width, bottom: itemTop + itemHeight,
+                  onClick: item.onClick, id: `menu:${number}` };
     hitBoxes.push(box);
-    if (mouseIsIn(box)) {
+    if (state.hoverId === box.id) {
       ctx.fillStyle = COLORS.titleBar;
       ctx.fillRect(box.left + 2, box.top, width - 24, itemHeight);
     }
-    // A thin line above "Shut down", like a real Start menu.
-    if (item.text === "Shut down") {
-      ctx.fillStyle = COLORS.text;
-      ctx.fillRect(left + 26, itemTop - 1, width - 32, 1);
-    }
     write(item.text, left + 30, itemTop + itemHeight / 2 + 1, FONTS.menu, COLORS.text, "left");
   });
+
+  // A thin line, then the power button in the bottom-right corner.
+  const lineY = bottom - powerRow;
+  ctx.fillStyle = COLORS.text;
+  ctx.fillRect(left + 26, lineY, width - 32, 1);
+  const power = { left: left + width - 30, top: lineY + 3, right: left + width - 6, bottom: bottom - 3,
+                  onClick: togglePowerMenu, keepsMenu: true, id: "power" };
+  hitBoxes.push(power);
+  if (state.hoverId === "power" || state.powerMenu) {
+    ctx.fillStyle = COLORS.titleBar;
+    ctx.fillRect(power.left, power.top, power.right - power.left, power.bottom - power.top);
+  }
+  drawPixels(POWER_ICON, power.left + 5, power.top + 4, 2, COLORS.text);
+
+  if (state.powerMenu) drawPowerMenu(power);
+}
+
+// The tiny Sleep / Shut down menu, popping up above the power button.
+function drawPowerMenu(power) {
+  const width = 112, itemHeight = 24;
+  const left = power.left - 20, bottom = power.top - 4;
+  const top = bottom - POWER_MENU.length * itemHeight - 8;
+
+  ctx.fillStyle = COLORS.text;                              // shadow
+  ctx.fillRect(left + 4, top + 4, width, bottom - top);
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(left, top, width, bottom - top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left, top, width, bottom - top);
+
+  POWER_MENU.forEach((item, number) => {
+    const itemTop = top + 4 + number * itemHeight;
+    const box = { left: left + 2, top: itemTop, right: left + width - 2, bottom: itemTop + itemHeight,
+                  onClick: item.onClick, id: `power:${number}` };
+    hitBoxes.push(box);
+    if (state.hoverId === box.id) {
+      ctx.fillStyle = COLORS.titleBar;
+      ctx.fillRect(box.left, box.top, box.right - box.left, itemHeight);
+    }
+    drawPixels(item.picture, left + 9, itemTop + 5, 2, COLORS.text);
+    write(item.text, left + 30, itemTop + itemHeight / 2 + 1, FONTS.menu, COLORS.text, "left");
+  });
+}
+
+// Opens or closes the little power menu (the Start menu stays open).
+function togglePowerMenu() {
+  playSound("click");
+  state.powerMenu = !state.powerMenu;
 }
 
 // Where windows (the love note, Memories, Games) open on the desktop.
@@ -1141,7 +1211,7 @@ canvas.addEventListener("wheel", event => {
 function startGame() {
   playSound("click");
   const game = state.game;
-  Object.assign(game, { playing: true, over: false, lastTime: null, result: null });
+  Object.assign(game, { playing: true, paused: false, over: false, lastTime: null, result: null });
   GAMES[game.key].setup(game, gameArea());
 }
 
@@ -1152,12 +1222,28 @@ function gameAction() {
 }
 
 window.addEventListener("keydown", event => {
-  if (event.code !== "Space" && event.code !== "ArrowUp") return;
-  if (state.game && state.game.playing) {
-    event.preventDefault();   // stop Space from scrolling the page
-    gameAction();
+  const game = state.game;
+  if (!game || !game.playing) return;
+
+  // Esc pauses or unpauses.
+  if (event.code === "Escape") {
+    togglePause();
+    return;
   }
+  if (event.code !== "Space" && event.code !== "ArrowUp") return;
+  event.preventDefault();   // stop Space from scrolling the page
+  if (!game.paused) gameAction();
 });
+
+// Pauses or unpauses the game that's playing.
+function togglePause() {
+  const game = state.game;
+  if (!game || !game.playing) return;
+  playSound("click");
+  game.paused = !game.paused;
+  // Forget the last frame's time, so the game doesn't jump ahead when it unpauses.
+  game.lastTime = null;
+}
 
 // Ends a game: saves a new best score if he beat it, and shows the result.
 function endGame(game, title, line, score) {
@@ -1168,6 +1254,23 @@ function endGame(game, title, line, score) {
   const beatIt = old === null || (info.lowerIsBetter ? score < old : score > old);
   if (beatIt) saveNumber(`best:${game.key}`, score);
   game.result = { title, line, best: beatIt ? score : old, newBest: beatIt && old !== null };
+}
+
+// The pause screen: the game fades behind a little "Paused" box with a Resume button.
+function drawPauseScreen(area) {
+  const middle = (area.left + area.right) / 2, centerY = (area.top + area.bottom) / 2;
+
+  // A see-through cover, which also blocks clicks from reaching the game underneath.
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+  ctx.globalAlpha = 1;
+  hitBoxes.push({ ...area, onClick: () => {}, blocker: true });
+
+  steppedBox(middle - 90, centerY - 50, middle + 90, centerY + 50, 4, COLORS.cream, COLORS.text, 2);
+  write("Paused", middle, centerY - 26, FONTS.celebrationSubtitle, COLORS.text);
+  write("Press Esc to keep playing", middle, centerY - 2, FONTS.tag, COLORS.text);
+  drawButton(middle, centerY + 28, 110, 28, "Resume", COLORS.acceptFill, COLORS.acceptText, togglePause);
 }
 
 // A game's window: the game itself while playing, or its start/end screen.
@@ -1184,12 +1287,21 @@ function drawGameWindow(time) {
   ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
 
   if (game.playing) {
-    // How much time passed since the last frame, in seconds.
+    // How much time passed since the last frame, in seconds. While paused, it's 0, so
+    // the game still gets drawn but nothing moves.
     // (Math.min stops a huge jump if the browser tab was hidden for a while.)
-    const seconds = game.lastTime === null ? 0 : Math.min(0.05, (time - game.lastTime) / 1000);
+    let seconds = game.lastTime === null ? 0 : Math.min(0.05, (time - game.lastTime) / 1000);
     game.lastTime = time;
+    if (game.paused) seconds = 0;
     info.step(game, area, seconds);
     ctx.restore();
+
+    if (game.paused) {
+      drawPauseScreen(area);
+    } else {
+      // Top left, just under the score.
+      write("Esc = pause", area.left + 8, area.top + 26, FONTS.tag, COLORS.text, "left");
+    }
     return;
   }
 
@@ -1324,7 +1436,8 @@ function stepCatch(game, area, seconds) {
   }
 
   // He follows the mouse along the bottom (his legs move while he's walking).
-  const target = keepBetween(state.mouse.x - 12, area.left + 2, area.right - 26);
+  // (While paused, he stays put.)
+  const target = game.paused ? game.x : keepBetween(state.mouse.x - 12, area.left + 2, area.right - 26);
   if (Math.abs(target - game.x) > 1) game.walking += seconds;
   game.x = target;
   const playerY = area.bottom - 34;
@@ -1457,9 +1570,9 @@ function setupMatch(game) {
 }
 
 function stepMatch(game, area) {
-  const cardWidth = 54, cardHeight = 48, gap = 8;
+  const cardWidth = 54, cardHeight = 46, gap = 7;
   const gridLeft = (area.left + area.right) / 2 - (4 * cardWidth + 3 * gap) / 2;
-  const gridTop = area.top + 28;
+  const gridTop = area.top + 36;   // leaves room for the score and "Esc = pause"
 
   write(`Moves: ${game.moves}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
 
@@ -1811,7 +1924,15 @@ function draw(time) {
   // Pop-ups go on top of everything.
   if (state.popup) drawPopup();
 
-  updateMouse();
+  // The screensaver goes on top of even the pop-ups.
+  updateScreensaver(time);
+  if (state.screensaver) {
+    drawScreensaver(time);
+    // Keep showing the little pixel arrow, so he can see where he's clicking.
+    canvas.style.cursor = mouseIsIn(SCREEN) ? ARROW_CURSOR : "default";
+  } else {
+    updateMouse();
+  }
   requestAnimationFrame(draw);
 }
 
@@ -1900,15 +2021,118 @@ function updateMouse() {
   }
 }
 
+// ====================================================================================
+// THE SCREENSAVER
+// ====================================================================================
+
+// If he doesn't touch anything on the desktop for this many seconds, the screensaver starts.
+// (Add ?idle=5 to the end of the link to make it 5 seconds, for testing.)
+const SCREENSAVER_SECONDS = PREVIEW.has("idle") ? Number(PREVIEW.get("idle")) : 60;
+
+// How big the bouncing heart's pixels are. Bigger number = bigger heart.
+const SCREENSAVER_HEART_SIZE = 12;
+
+// Each time it bounces off an edge, it switches to the next color.
+const SCREENSAVER_COLORS = ["#F07A9C", "#7FB8F0", "#FFE08A", "#C9B6F2", "#8EE3B5", "#F8BFCB"];
+
+let lastActivity = performance.now();
+
+// Moving the mouse, scrolling, or typing counts as "he's here" (so the screensaver waits),
+// but once it's on, only a CLICK makes it go away.
+function stillHere() {
+  lastActivity = performance.now();
+}
+window.addEventListener("keydown", stillHere);
+canvas.addEventListener("wheel", stillHere);
+
+// Clicking turns the screensaver off. Returns true if it did (so that click doesn't
+// also click whatever was underneath).
+function wakeUp() {
+  stillHere();
+  if (state.screensaver) {
+    playSound("click");
+    state.screensaver = null;
+    return true;
+  }
+  return false;
+}
+
+// Starts the screensaver once he's been away long enough, but only on the desktop, and
+// never in the middle of a game.
+function updateScreensaver(time) {
+  if (state.screensaver) return;
+  const playing = state.game && state.game.playing;
+  if (state.mode !== "desktop" || playing) {
+    lastActivity = time;
+    return;
+  }
+  if (time - lastActivity < SCREENSAVER_SECONDS * 1000) return;
+  startScreensaver();
+}
+
+// Starts the bouncing heart somewhere random, heading diagonally.
+function startScreensaver() {
+  state.screensaver = {
+    x: between(SCREEN.left + 20, SCREEN.right - 110, Math.random()),
+    y: between(SCREEN.top + 20, SCREEN.bottom - 90, Math.random()),
+    speedX: 70, speedY: 55, color: 0, lastTime: performance.now(),
+  };
+}
+
+// "Go to sleep" in the Start menu: the screensaver right away.
+function goToSleep() {
+  playSound("click");
+  state.startMenu = false;
+  startScreensaver();
+}
+
+// Black screen, with a big heart bouncing around like an old DVD player.
+function drawScreensaver(time) {
+  const saver = state.screensaver;
+  const seconds = Math.min(0.05, (time - saver.lastTime) / 1000);
+  saver.lastTime = time;
+
+  // How big the heart is (the HEART picture is 7 pixels wide and 6 tall).
+  const width = 7 * SCREENSAVER_HEART_SIZE;
+  const height = 6 * SCREENSAVER_HEART_SIZE;
+
+  // Move, and bounce off the edges (switching color each time).
+  saver.x += saver.speedX * seconds;
+  saver.y += saver.speedY * seconds;
+  if (saver.x < SCREEN.left + 4 || saver.x + width > SCREEN.right - 4) {
+    saver.speedX = -saver.speedX;
+    saver.x = keepBetween(saver.x, SCREEN.left + 4, SCREEN.right - 4 - width);
+    saver.color = (saver.color + 1) % SCREENSAVER_COLORS.length;
+  }
+  if (saver.y < SCREEN.top + 4 || saver.y + height > SCREEN.bottom - 4) {
+    saver.speedY = -saver.speedY;
+    saver.y = keepBetween(saver.y, SCREEN.top + 4, SCREEN.bottom - 4 - height);
+    saver.color = (saver.color + 1) % SCREENSAVER_COLORS.length;
+  }
+
+  ctx.fillStyle = "#15111C";
+  ctx.beginPath();
+  ctx.roundRect(SCREEN.left, SCREEN.top, SCREEN.right - SCREEN.left, SCREEN.bottom - SCREEN.top, SCREEN.corner);
+  ctx.fill();
+
+  // Math.round keeps the heart on whole pixels, so no thin lines show between its squares.
+  drawPixels(HEART, Math.round(saver.x), Math.round(saver.y), SCREENSAVER_HEART_SIZE, SCREENSAVER_COLORS[saver.color]);
+}
+
 canvas.addEventListener("pointermove", event => {
   state.mouse = toDrawing(event);
+  stillHere();
 });
 
 canvas.addEventListener("pointerdown", event => {
   state.mouse = toDrawing(event);
+  // If this click woke up the screensaver, that's all it does.
+  if (wakeUp()) return;
   const box = boxUnderMouse();
   // Clicking anything except the Start button closes the Start menu.
   if (!box || !box.keepsMenu) state.startMenu = false;
+  // The power menu closes on any click except the power button itself.
+  if (!box || box.id !== "power") state.powerMenu = false;
   if (box) box.onClick();
 });
 
