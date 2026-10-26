@@ -37,6 +37,9 @@
       aspect-ratio: 3 / 2;
       display: block;
       touch-action: manipulation;
+      /* Softly fade the left and right edges, so the picture blends into the page. */
+      -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+      mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
     }
   </style>
 </head>

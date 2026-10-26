@@ -136,6 +136,27 @@ ctx.scale(2, 2);
 const background = new Image();
 background.src = "images/background.png";
 
+// The picture doesn't fill wide (or tall) screens, so the page behind it is painted to
+// match: wall on top, then the desk's dark edge line, then desk below. These are where
+// those things are in the picture, as a fraction of its height (0 = top, 1 = bottom).
+const DESK_EDGE_TOP = 802 / 1024;
+const DESK_TOP = 806 / 1024;
+
+function extendDesk() {
+  const box = canvas.getBoundingClientRect();
+  const top = box.top;
+  const edge = box.top + box.height * DESK_EDGE_TOP;
+  const desk = box.top + box.height * DESK_TOP;
+  document.body.style.background = `linear-gradient(to bottom,
+    #CBBED8 0px, #CABDD6 ${top}px, #C0B5CE ${edge}px,
+    #A59A9C ${edge}px, #A59A9C ${desk}px,
+    #F5E5CE ${desk}px, #FCEDD5 100%)`;
+}
+
+// Repaint it whenever the window changes size.
+window.addEventListener("resize", extendDesk);
+extendDesk();
+
 
 // ====================================================================================
 // WHAT'S ON SCREEN RIGHT NOW
