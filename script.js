@@ -329,13 +329,15 @@ function drawSparkles() {
   });
 }
 
-// The "click to start" message, before anything happens.
+// The start screen: "click MWAHHH to start" and a pink MWAHHH button.
+// (Nothing else shows yet, so "Psst, Jacob..." gets to type itself out.)
 function drawStartMessage(time) {
-  write(`Psst, ${RECIPIENT_NAME}...`, CENTER_X, 190, FONTS.title, COLORS.text);
-  // Blinks on and off every 0.6 seconds.
-  if (Math.floor(time / 600) % 2 === 0) {
-    write("[ click anywhere to start ]", CENTER_X, 260, FONTS.body, COLORS.text);
-  }
+  write("click MWAHHH to start", CENTER_X, 190, FONTS.body, COLORS.text);
+
+  // The button gently bobs up and down so it looks clickable.
+  // sin() goes smoothly back and forth between -1 and 1.
+  const bob = Math.sin(time / 300) * 2;
+  drawButton(CENTER_X, 245 + bob, 160, 44, "MWAHHH", COLORS.acceptFill, COLORS.acceptText, start);
 }
 
 function drawEnvelope() {
@@ -624,7 +626,7 @@ function boxUnderMouse() {
 // Shows a pointing hand over clickable things, and lifts the envelope when hovered.
 function updateMouse() {
   const box = boxUnderMouse();
-  canvas.style.cursor = box || !state.started ? "pointer" : "default";
+  canvas.style.cursor = box ? "pointer" : "default";
   if (state.envelope && state.envelope.clickable) {
     state.envelope.lift = box && box.isEnvelope ? 4 : 0;
   }
@@ -636,18 +638,18 @@ canvas.addEventListener("pointermove", event => {
 
 canvas.addEventListener("pointerdown", event => {
   state.mouse = toDrawing(event);
-
-  // The first click starts everything. (Browsers don't allow sounds until you click.)
-  if (!state.started) {
-    audio.resume();
-    state.started = true;
-    startShow();
-    return;
-  }
-
   const box = boxUnderMouse();
   if (box) box.onClick();
 });
+
+// He clicked MWAHHH: start everything.
+// (Browsers don't allow sounds until you click something, so this click turns sound on.)
+function start() {
+  audio.resume();
+  playSound("click");
+  state.started = true;
+  startShow();
+}
 
 
 // ====================================================================================
