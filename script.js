@@ -13,14 +13,30 @@
 
 const RECIPIENT_NAME = "Jacob";
 const GREETING_SUBTITLE = "You have one very important invitation.";
-const CARD_TITLE = `${RECIPIENT_NAME}, be my date?`;
 
-// The details on the letter. "\n" starts a new line.
-const DETAILS = {
-  plan: "Top secret",
-  bring: "Your cute self, and maybe some snacks",
-  when: "Monday, Oct 26\n9pm your time, 1pm my time",
-};
+// EVERY DATE INVITE. Each one becomes an icon on the computer's desktop.
+//
+// TO ADD A NEW DATE: copy one whole { ... }, block (from { to },), paste it at the
+// BOTTOM of the list, and change the words. Give it a new "id" that's never been used
+// (the date works great). The id is how his browser remembers what he's opened.
+//
+//   id     - a unique name for this invite (never change it after he's seen it!)
+//   label  - the words under the desktop icon (keep it short)
+//   title  - the big words at the top of the letter
+//   plan, bring, when - the details on the letter. "\n" starts a new line.
+const INVITES = [
+  {
+    id: "2026-10-26",
+    label: "Oct 26",
+    title: `${RECIPIENT_NAME}, be my date?`,
+    plan: "Top secret",
+    bring: "Your cute self, and maybe some snacks",
+    when: "Monday, Oct 26\n9pm your time, 1pm my time",
+  },
+];
+
+// The name of the computer, shown on the taskbar's Start button.
+const START_BUTTON_TEXT = "Start";
 
 // The jokes in the ERROR pop-up, one for each time he clicks Decline.
 // After the last one, Decline turns into Accept.
@@ -61,7 +77,20 @@ const COLORS = {
   acceptFill: "#C98298",
   acceptText: "#FFFFFF",
   cream: "#FFF7EE",           // Decline button and pop-up
+  wallpaperHeart: "#A9D6FB",  // the faint hearts on the desktop wallpaper
+  iconHover: "#D6ECFE",       // the highlight behind a desktop icon when the mouse is on it
+  newTag: "#F07A9C",
+  check: "#4CAF6A",           // the green "accepted" checkmark
 };
+
+// A little pixel checkmark, for invites he's accepted.
+const CHECK = [
+  ".....X",
+  "....XX",
+  "X..XX.",
+  "XXXX..",
+  ".XX...",
+];
 
 const CONFETTI_COLORS = ["#F07A9C", "#F8BFCB", "#7FB8F0", "#FFE08A", "#C9B6F2", "#FFFFFF"];
 
@@ -75,6 +104,8 @@ const FONTS = {
   letter: "17px 'Pixelify Sans'",
   suggest: "13px 'Pixelify Sans'",
   celebrationSubtitle: "27px 'Pixelify Sans'",
+  iconLabel: "bold 14px 'Pixelify Sans'",
+  tag: "bold 10px 'Pixelify Sans'",
 };
 
 // The drawing is 768 x 512 (half the size of the background picture).
@@ -136,6 +167,16 @@ ctx.scale(2, 2);
 const background = new Image();
 background.src = "images/background.png";
 
+// The desktop wallpaper. If images/wallpaper.png exists, it fills the desktop.
+// If it doesn't, the desktop shows faint pixel hearts instead.
+const wallpaper = new Image();
+let hasWallpaper = false;
+wallpaper.onload = () => { hasWallpaper = true; };
+wallpaper.src = "images/wallpaper.png";
+
+// The edges of the computer's blue screen (the wallpaper is trimmed to fit inside).
+const SCREEN = { left: 146, top: 61, right: 621, bottom: 362, corner: 14 };
+
 // The picture doesn't fill wide (or tall) screens, so the page behind it is painted to
 // match: wall on top, then the desk's dark edge line, then desk below. These are where
 // those things are in the picture, as a fraction of its height (0 = top, 1 = bottom).
@@ -163,7 +204,8 @@ extendDesk();
 // ====================================================================================
 
 const state = {
-  started: false,         // has he clicked to start yet?
+  mode: "start",          // "start" (MWAHHH button), "desktop" (the icons), or "invite" (playing one)
+  invite: null,           // which invite is playing (one from the INVITES list)
   title: "",              // the big typed words
   subtitle: "",           // the smaller typed words under them
   sparkleDim: SPARKLE_SPOTS.map(() => false),   // which sparkles are blinking
@@ -180,6 +222,15 @@ const state = {
 
 // Every frame, clickable things add a "hit box" here, so we know what the mouse is over.
 let hitBoxes = [];
+
+// His browser remembers which invites he's opened and accepted ("localStorage").
+// try/catch: if the browser blocks it (like some private windows), just carry on.
+function remember(key) {
+  try { localStorage.setItem(key, "yes"); } catch (problem) {}
+}
+function remembers(key) {
+  try { return localStorage.getItem(key) === "yes"; } catch (problem) { return false; }
+}
 
 
 // ====================================================================================
@@ -220,17 +271,27 @@ function playKeySound(volume) {
 // TIMING HELPERS
 // ====================================================================================
 
+// Every time an invite opens or closes, this number goes up by 1.
+// Waits and animations remember the number from when they started. If it has changed
+// (he closed the invite), they quietly stop, so an old invite can't keep playing.
+let currentRun = 0;
+
 // Waits this many milliseconds. Use it like: await wait(500);
 function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  const run = currentRun;
+  return new Promise(resolve => setTimeout(() => {
+    if (run === currentRun) resolve();
+  }, ms));
 }
 
 // Animates over this many milliseconds. onStep gets a number from 0 to 1
 // (0 = start, 1 = finished) that starts fast and slows down gently at the end.
 function animate(ms, onStep) {
+  const run = currentRun;
   return new Promise(resolve => {
     const start = performance.now();
     function frame(now) {
+      if (run !== currentRun) return;
       const progress = Math.min(1, (now - start) / ms);
       onStep(1 - (1 - progress) ** 2);
       if (progress < 1) requestAnimationFrame(frame);
@@ -342,6 +403,107 @@ function drawTitleBar() {
   ctx.moveTo(591, 87); ctx.lineTo(584, 94);
   ctx.stroke();
   ctx.strokeRect(566, 87, 6, 6);                                    // maximize
+
+  // While an invite is playing, the X closes it and goes back to the desktop.
+  if (state.mode === "invite") {
+    hitBoxes.push({ left: 576, top: 79, right: 600, bottom: 101, onClick: closeInvite });
+  }
+}
+
+// The desktop: heart wallpaper, an icon for each invite, and a taskbar.
+function drawDesktop() {
+  if (hasWallpaper) {
+    // Fill the screen with the picture, trimmed to the screen's rounded corners.
+    // save() and restore() make the trimming only apply to the wallpaper.
+    const width = SCREEN.right - SCREEN.left, height = SCREEN.bottom - SCREEN.top;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(SCREEN.left, SCREEN.top, width, height, SCREEN.corner);
+    ctx.clip();
+    // "Cover": grow the picture until it fills the screen, then center it (edges may be cut a little).
+    const scale = Math.max(width / wallpaper.width, height / wallpaper.height);
+    const drawWidth = wallpaper.width * scale, drawHeight = wallpaper.height * scale;
+    ctx.drawImage(wallpaper, SCREEN.left + (width - drawWidth) / 2, SCREEN.top + (height - drawHeight) / 2,
+                  drawWidth, drawHeight);
+    ctx.restore();
+  } else {
+    // Faint pixel hearts in a checkerboard pattern. Every other row is shifted over.
+    for (let row = 0; row < 6; row++) {
+      for (let column = 0; column < 8; column++) {
+        const x = 172 + column * 56 + (row % 2) * 28;
+        const y = 78 + row * 44;
+        if (x < 600) drawPixels(HEART, x, y, 2, COLORS.wallpaperHeart);
+      }
+    }
+  }
+
+  INVITES.forEach((invite, number) => drawIcon(invite, number));
+  drawTaskbar();
+}
+
+// One desktop icon: a little envelope with the date under it.
+// Icons go in rows of 4, left to right, then the next row.
+function drawIcon(invite, number) {
+  const x = 214 + (number % 4) * 100;            // the middle of the icon, left to right
+  const y = 128 + Math.floor(number / 4) * 92;   // the middle of the envelope, top to bottom
+
+  // The clickable area around the icon and its label.
+  const box = { left: x - 42, top: y - 26, right: x + 42, bottom: y + 44, onClick: () => openInvite(invite) };
+  hitBoxes.push(box);
+
+  // A soft highlight while the mouse is over it.
+  const { x: mouseX, y: mouseY } = state.mouse;
+  if (mouseX >= box.left && mouseX <= box.right && mouseY >= box.top && mouseY <= box.bottom) {
+    // globalAlpha 0.55 makes it a bit see-through, so the wallpaper shows behind it.
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = COLORS.iconHover;
+    ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+    ctx.globalAlpha = 1;
+  }
+
+  // The little envelope.
+  ctx.fillStyle = COLORS.envelopePaper;
+  ctx.fillRect(x - 20, y - 14, 40, 28);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - 20, y - 14, 40, 28);
+  ctx.strokeStyle = COLORS.envelopeLine;
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y - 12); ctx.lineTo(x, y + 2); ctx.lineTo(x + 18, y - 12);
+  ctx.stroke();
+  drawPixels(HEART, x - 7, y - 4, 2, COLORS.heart);
+
+  // The date under it, on a little cream tag so it's easy to read on any wallpaper.
+  ctx.font = FONTS.iconLabel;
+  const labelWidth = ctx.measureText(invite.label).width + 10;
+  steppedBox(x - labelWidth / 2, y + 21, x + labelWidth / 2, y + 39, 2, COLORS.cream, COLORS.text, 1.5);
+  write(invite.label, x, y + 30.5, FONTS.iconLabel, COLORS.text);
+
+  // A pink NEW tag if he hasn't opened it yet, or a green check if he's accepted it.
+  if (!remembers(`opened:${invite.id}`)) {
+    steppedBox(x + 8, y - 24, x + 44, y - 10, 2, COLORS.newTag, COLORS.text, 1.5);
+    write("NEW", x + 26, y - 16.5, FONTS.tag, "#FFFFFF");
+  } else if (remembers(`accepted:${invite.id}`)) {
+    drawPixels(CHECK, x + 16, y - 24, 3, COLORS.check);
+  }
+}
+
+// The pink bar along the bottom, with a Start button and a clock.
+function drawTaskbar() {
+  ctx.fillStyle = COLORS.titleBar;
+  ctx.fillRect(160, 330, 448, 24);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(160, 330, 448, 24);
+
+  // The Start button, with a little heart.
+  steppedBox(164, 333, 238, 351, 2, COLORS.cream, COLORS.text, 1.5);
+  drawPixels(HEART, 170, 337, 2, COLORS.heart);
+  write(START_BUTTON_TEXT, 186, 342.5, FONTS.small, COLORS.text, "left");
+
+  // The clock shows the time on HIS computer, like a real taskbar.
+  const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  write(time, 598, 342.5, FONTS.small, COLORS.text, "right");
 }
 
 function drawSparkles() {
@@ -470,7 +632,8 @@ function drawLetter() {
   ctx.globalAlpha = state.letter.alpha;
 
   // The title, with a pink heart on each side, and a dotted line under it.
-  write(CARD_TITLE, CENTER_X, 118, FONTS.letterTitle, COLORS.text, "center", "top");
+  const invite = state.invite;
+  write(invite.title, CENTER_X, 118, FONTS.letterTitle, COLORS.text, "center", "top");
   drawPixels(HEART, 196, 128, 2, COLORS.heart);
   drawPixels(HEART, 558, 128, 2, COLORS.heart);
 
@@ -489,7 +652,7 @@ function drawLetter() {
   const lineHeight = 21;
   let y = 171;
 
-  [["Plan:", DETAILS.plan], ["What to bring:", DETAILS.bring], ["When:", DETAILS.when]].forEach(([label, value]) => {
+  [["Plan:", invite.plan], ["What to bring:", invite.bring], ["When:", invite.when]].forEach(([label, value]) => {
     const lines = wrapDetail(label, value, textRight - textLeft, indent);
     lines.forEach((line, i) => {
       write(line, i === 0 ? textLeft : textLeft + indent, y + i * lineHeight,
@@ -576,6 +739,11 @@ function drawCelebration() {
   write(CELEBRATION_SUBTITLE, CENTER_X, 245, FONTS.celebrationSubtitle, COLORS.text);
   CELEBRATION_HEARTS.forEach(([x, y, size]) => drawPixels(HEART, x, y, size, COLORS.heart));
   ctx.globalAlpha = 1;
+
+  // Once it's faded in, a button to go back to the desktop.
+  if (state.celebration.alpha >= 1) {
+    drawButton(CENTER_X, 312, 190, 32, "Back to desktop", COLORS.cream, COLORS.text, closeInvite);
+  }
 }
 
 function drawConfetti() {
@@ -598,12 +766,16 @@ function draw(time) {
   hitBoxes = [];
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
-  drawTitleBar();
-  drawSparkles();
 
-  if (!state.started) {
+  if (state.mode === "start") {
+    drawTitleBar();
+    drawSparkles();
     drawStartMessage(time);
+  } else if (state.mode === "desktop") {
+    drawDesktop();
   } else {
+    drawTitleBar();
+    drawSparkles();
     write(state.title, CENTER_X, 170, FONTS.title, COLORS.text);
     write(state.subtitle, CENTER_X, 218, FONTS.body, COLORS.text);
     if (state.envelope) drawEnvelope();
@@ -648,7 +820,7 @@ function boxUnderMouse() {
 function updateMouse() {
   const box = boxUnderMouse();
   canvas.style.cursor = box ? "pointer" : "default";
-  if (state.envelope && state.envelope.clickable) {
+  if (state.mode === "invite" && state.envelope && state.envelope.clickable) {
     state.envelope.lift = box && box.isEnvelope ? 4 : 0;
   }
 }
@@ -663,13 +835,38 @@ canvas.addEventListener("pointerdown", event => {
   if (box) box.onClick();
 });
 
-// He clicked MWAHHH: start everything.
+// He clicked MWAHHH: go to the desktop.
 // (Browsers don't allow sounds until you click something, so this click turns sound on.)
 function start() {
   audio.resume();
   playSound("click");
-  state.started = true;
+  state.mode = "desktop";
+}
+
+// Clears away everything from an invite, and stops anything still animating.
+function resetInvite() {
+  currentRun += 1;
+  Object.assign(state, {
+    title: "", subtitle: "", envelope: null, paper: null, flaps: null, letter: null,
+    declines: 0, popup: null, celebration: null, confetti: [],
+  });
+}
+
+// He clicked an icon on the desktop: play that invite.
+function openInvite(invite) {
+  playSound("click");
+  remember(`opened:${invite.id}`);
+  resetInvite();
+  state.invite = invite;
+  state.mode = "invite";
   startShow();
+}
+
+// He clicked the X (or "Back to desktop"): close the invite.
+function closeInvite() {
+  playSound("click");
+  resetInvite();
+  state.mode = "desktop";
 }
 
 
@@ -783,6 +980,7 @@ function closePopup() {
 function accept() {
   playSound("click");
   playSound("chime");
+  remember(`accepted:${state.invite.id}`);
   state.letter = null;
   state.paper = null;
   state.celebration = { alpha: 0 };
@@ -806,8 +1004,11 @@ function launchConfetti() {
     }
   });
 
-  // Move every piece a step every 30 milliseconds, until they've all fallen.
+  // Move every piece a step every 30 milliseconds, until they've all fallen
+  // (or he closes the invite).
+  const run = currentRun;
   const timer = setInterval(() => {
+    if (run !== currentRun) { clearInterval(timer); return; }
     state.confetti.forEach(piece => {
       piece.speedY += 0.28;      // gravity
       piece.speedX *= 0.98;      // air slows it sideways
