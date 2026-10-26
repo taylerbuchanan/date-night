@@ -20,6 +20,9 @@
     html, body {
       margin: 0;
       height: 100%;
+      /* "dvh" = the part of the screen you can actually see (on phones, the address bar
+         covers some of it). Browsers that don't know dvh use the line above instead. */
+      height: 100dvh;
       /* The same lavender as the wall in the picture, so it all blends together. */
       background: #CBBED8;
     }
@@ -34,6 +37,7 @@
     /* The drawing is 3 wide for every 2 tall. This makes it as big as fits on the screen. */
     canvas {
       width: min(100vw, 150vh);
+      width: min(100vw, 150dvh);
       aspect-ratio: 3 / 2;
       display: block;
       touch-action: manipulation;

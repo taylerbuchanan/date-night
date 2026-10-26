@@ -405,6 +405,19 @@ const sounds = {};
     .catch(() => {});   // a missing sound just stays quiet
 });
 
+// Phones only allow sound after a tap. Some phones (like iPhones) are picky about WHICH
+// part of the tap counts, so this tries again on every kind of tap until sound is on.
+function unlockSound() {
+  if (audio.state !== "running") audio.resume();
+}
+["pointerdown", "touchend", "click", "keydown"].forEach(kind => window.addEventListener(kind, unlockSound));
+
+// On newer iPhones, this lets sounds play even when the phone's silent switch is on
+// (like music or videos do). Older phones just skip it.
+try {
+  if (navigator.audioSession) navigator.audioSession.type = "playback";
+} catch (problem) {}
+
 // Plays a sound by name. volume: 1 = normal, 0.5 = half as loud.
 function playSound(name, volume = 1) {
   if (!sounds[name]) return;
