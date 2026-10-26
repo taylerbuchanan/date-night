@@ -60,7 +60,6 @@ const LOVE_NOTES = [
 ];
 
 // The pop-ups from the Start menu.
-const MISS_YOU_MESSAGE = `${YOUR_NAME} misses you too. Like, a lot.`;
 const SHUT_DOWN_MESSAGE = "Nice try. This computer runs on love and never shuts down.";
 
 // Photos of you two, shown in Memories > Photos. To add one:
@@ -1168,11 +1167,16 @@ function taskbarPicture(win) {
 }
 
 // The choices in the Start menu.
+// ("Miss ___" is the other person's name, so it's "Miss Tayler" on his side and
+// "Miss Jacob" on yours. Love notes are only on his side, since they're from you.)
 const START_MENU = [
-  { text: "Love notes", onClick: openLoveNotes },
+  ...(IS_TAYLER ? [] : [{ text: "Love notes", onClick: openLoveNotes }]),
+  { text: "Open when...", onClick: () => openWindow("openwhen") },
   { text: "Memories", onClick: () => openWindow("memories") },
   { text: "Arcade", onClick: () => openWindow("games") },
-  { text: `Miss ${YOUR_NAME}`, onClick: () => showPopup("MESSAGE", MISS_YOU_MESSAGE) },
+  { text: "Plan a date", onClick: () => openWindow("plan") },
+  { text: "IM", onClick: () => openWindow("im") },
+  { text: `Miss ${OTHER}`, onClick: () => showPopup("MESSAGE", `${OTHER} misses you too. Like, a lot.`) },
 ];
 
 // The little menu that pops up from the power button, like a real Windows computer.
