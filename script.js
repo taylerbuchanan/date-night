@@ -497,44 +497,38 @@ function drawPixels(pattern, x, y, size, color) {
   });
 }
 
-// A little vase with a tulip, sitting on the desk to the left of the computer.
-// R = petals, Y = middle, G = stem, L = leaves, O = outline, B = vase, W = shine.
-const VASE = [
-  "....R..R....",
-  "...RRRRRR...",
-  "...RRYYRR...",
-  "...RRRRRR...",
-  "....RRRR....",
-  ".....GG.....",
-  "..LL.GG.....",
-  "...LLGG.....",
-  ".....GG.LL..",
-  ".....GGLL...",
-  ".....GG.....",
-  "...OOOOOO...",
-  "..OBBBBBBO..",
-  ".OBWBBBBBBO.",
-  ".OBWBBBBBBO.",
-  ".OBBBBBBBBO.",
-  "..OBBBBBBO..",
-  "...OOOOOO...",
-];
-const VASE_COLORS = {
-  R: "#F07A9C", Y: "#FFE08A", G: "#5E9E5A", L: "#7CC27A", O: "#45284A", B: "#A9D6FB", W: "#FFFFFF",
-};
-const VASE_SPOT = { x: 26, y: 392, size: 4 };   // where it sits, and how big its pixels are
+// A little vase with a flower (images/vase.png), sitting on the desk left of the computer.
+const vasePicture = new Image();
+vasePicture.src = "images/vase.png";
 
-// Draws the vase. Clicking it makes the flower wiggle and a heart float up.
+// Where the flower is inside that picture (the rest of the picture is see-through).
+const VASE_CROP = { left: 223, top: 328, right: 732, bottom: 1531 };
+
+// Where it goes on the desk: its left edge, where it sits (bottom), and how tall it is.
+// (The left edge of the picture softly fades out, so the vase starts just past that fade.)
+const VASE_SPOT = { left: 25, bottom: 470, height: 162 };
+
+// Draws the vase. Clicking it makes the flower sway and a heart float up.
 function drawVase(time) {
-  const { x, y, size } = VASE_SPOT;
-  const width = VASE[0].length * size, height = VASE.length * size;
-  // The flower part (top rows) leans side to side for a moment after a click.
+  if (!vasePicture.complete || !vasePicture.naturalWidth) return;
+  const crop = VASE_CROP;
+  const height = VASE_SPOT.height;
+  const width = height * (crop.right - crop.left) / (crop.bottom - crop.top);
+  const left = VASE_SPOT.left, top = VASE_SPOT.bottom - height;
+
+  // For a moment after a click, it sways side to side, tipping from the bottom of the vase.
   const wiggle = state.vaseWiggle ? Math.max(0, 1 - (time - state.vaseWiggle) / 1200) : 0;
-  const lean = Math.round(Math.sin(time / 80) * 3 * wiggle);
-  drawSprite(VASE.slice(0, 11), VASE_COLORS, x + lean, y, size);
-  drawSprite(VASE.slice(11), VASE_COLORS, x, y + 11 * size, size);
-  if (wiggle > 0) drawPixels(HEART, x + width / 2 - 7, y - 20 - (1 - wiggle) * 20, 2, COLORS.heart);
-  hitBoxes.push({ left: x, top: y, right: x + width, bottom: y + height, onClick: () => {
+  const angle = Math.sin(time / 90) * 0.08 * wiggle;
+  ctx.save();
+  ctx.translate(left + width / 2, VASE_SPOT.bottom);
+  ctx.rotate(angle);
+  ctx.imageSmoothingEnabled = false;    // keeps the pixels crisp instead of blurry
+  ctx.drawImage(vasePicture, crop.left, crop.top, crop.right - crop.left, crop.bottom - crop.top,
+                -width / 2, -height, width, height);
+  ctx.restore();
+
+  if (wiggle > 0) drawPixels(HEART, left + width / 2 - 7, top - 16 - (1 - wiggle) * 20, 2, COLORS.heart);
+  hitBoxes.push({ left, top, right: left + width, bottom: VASE_SPOT.bottom, onClick: () => {
     playSound("click");
     state.vaseWiggle = performance.now();
   } });
@@ -795,9 +789,50 @@ function drawTitleBar() {
   ctx.stroke();
   ctx.strokeRect(566, 87, 6, 6);                                    // maximize
 
-  // While an invite is playing, the X closes it and goes back to the desktop.
+  // While an invite is playing, these buttons work: minimize, smaller/bigger, and close.
   if (state.mode === "invite") {
-    hitBoxes.push({ left: 576, top: 79, right: 600, bottom: 101, onClick: closeInvite });
+    hitBoxes.push({ left: 540, top: 79, right: 559, bottom: 101, onClick: minimizeInvite });
+    hitBoxes.push({ left: 559, top: 79, right: 577, bottom: 101, onClick: toggleInviteSize });
+    hitBoxes.push({ left: 577, top: 79, right: 600, bottom: 101, onClick: closeInvite });
+  }
+}
+
+// ---------- Making the invite smaller, or minimizing it ----------
+
+// When the invite is "small", it shrinks into a window floating over the desktop.
+// These numbers are how much it shrinks, and where its middle goes.
+const INVITE_SMALL_SCALE = 0.72;
+const INVITE_SMALL_CENTER = { x: 384, y: (SCREEN.top + TASKBAR.top) / 2 };
+const SCREEN_CENTER = { x: (SCREEN.left + SCREEN.right) / 2, y: (SCREEN.top + SCREEN.bottom) / 2 };
+
+// Moves a spot from the full-size invite to where it is on the small one.
+function toSmallInvite(x, y) {
+  return {
+    x: INVITE_SMALL_CENTER.x + (x - SCREEN_CENTER.x) * INVITE_SMALL_SCALE,
+    y: INVITE_SMALL_CENTER.y + (y - SCREEN_CENTER.y) * INVITE_SMALL_SCALE,
+  };
+}
+
+function minimizeInvite() {
+  playSound("click");
+  state.inviteMinimized = true;
+  state.mode = "desktop";
+}
+
+function toggleInviteSize() {
+  playSound("click");
+  state.inviteSmall = !state.inviteSmall;
+}
+
+// The invite's button on the taskbar: brings it back, or minimizes it if it's showing.
+function inviteTaskbarClick() {
+  playSound("click");
+  if (state.mode === "invite") {
+    state.inviteMinimized = true;
+    state.mode = "desktop";
+  } else {
+    state.inviteMinimized = false;
+    state.mode = "invite";
   }
 }
 
@@ -844,7 +879,8 @@ function drawDesktop(time) {
     ...(IS_TAYLER ? [] : LOVE_NOTES.filter(note => !noteIsRead(note) || state.windows.some(win => win.noteId === note.id)).map(note => ({
       label: "love_note", picture: drawNoteIcon, onClick: () => openNote(note), tag: "new",
     }))),
-    ...(IS_TAYLER ? [] : [{ label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen") }]),
+    { label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen"),
+      tag: unreadLetters().length ? "new" : null },
     { label: "Memories", picture: drawFolderIcon, onClick: () => openWindow("memories") },
     { label: "Arcade", picture: drawArcadeIcon, onClick: () => openWindow("games") },
     // The secret folder (coupon book) is hidden for now. To bring it back, remove the // below.
@@ -1083,31 +1119,52 @@ function drawTaskbar() {
   // The window on top looks pressed in. Clicking a button brings that window forward,
   // or minimizes it if it's already on top.
   const clocksLeft = heartX - 6 - ctx.measureText(yourClock).width - 8;
-  const space = clocksLeft - (button.right + 6);
-  const count = state.windows.length;
+  // An open (or minimized) date invite gets the first button, with a little envelope.
+  const inviteOpen = state.invite && (state.mode === "invite" || state.inviteMinimized);
+  const count = state.windows.length + (inviteOpen ? 1 : 0);
   if (count === 0) return;
-  const width = Math.min(96, space / count - 4);
+  const space = clocksLeft - (button.right + 6);
+  const width = Math.min(30, space / count - 4);
   const onTop = topWindow();
+  let first = button.right + 6;
+  if (inviteOpen) {
+    const box = { left: first, top: button.top, right: first + width, bottom: button.bottom,
+                  id: "taskbar:invite", onClick: inviteTaskbarClick };
+    hitBoxes.push(box);
+    steppedBox(box.left, box.top, box.right, box.bottom, 2,
+               state.mode === "invite" ? COLORS.iconHover : (state.hoverId === box.id ? COLORS.white : COLORS.cream), COLORS.text, 1.5);
+    ctx.save();
+    ctx.translate((box.left + box.right) / 2, middle);
+    ctx.scale(0.36, 0.36);
+    drawEnvelopeIcon(0, 0);
+    ctx.restore();
+    first += width + 4;
+  }
   state.windows.forEach((win, number) => {
-    const box = { left: button.right + 6 + number * (width + 4), top: button.top, bottom: button.bottom,
+    const box = { left: first + number * (width + 4), top: button.top, bottom: button.bottom,
                   id: `taskbar:${number}`, onClick: () => taskbarClick(win) };
     box.right = box.left + width;
     hitBoxes.push(box);
-    const pressed = win === onTop;
+    const pressed = win === onTop && state.mode !== "invite";
     steppedBox(box.left, box.top, box.right, box.bottom, 2,
                pressed ? COLORS.iconHover : (state.hoverId === box.id ? COLORS.white : COLORS.cream), COLORS.text, 1.5);
 
-    // A little heart, then the window's name (cut short with "..." if it doesn't fit).
-    drawPixels(HEART, box.left + 5, middle - 3, 1, COLORS.heart);
-    let name = win.window.startsWith("game:") ? GAMES[win.window.slice(5)].label : TASKBAR_NAMES[win.window];
-    ctx.font = FONTS.tag;
-    const room = width - 20;
-    if (ctx.measureText(name).width > room) {
-      while (name.length > 1 && ctx.measureText(name + "...").width > room) name = name.slice(0, -1);
-      name += "...";
-    }
-    write(name, box.left + 15, middle + 1, FONTS.tag, COLORS.text, "left");
+    // A tiny copy of the window's desktop icon (shrunk down to fit the button).
+    ctx.save();
+    ctx.translate((box.left + box.right) / 2, middle);
+    ctx.scale(0.36, 0.36);
+    taskbarPicture(win)(0, 0);
+    ctx.restore();
   });
+}
+
+// Which icon picture goes on a window's taskbar button (the same one as on the desktop).
+function taskbarPicture(win) {
+  if (win.window.startsWith("game:")) return GAMES[win.window.slice(5)].picture;
+  return {
+    notes: drawNoteIcon, memories: drawFolderIcon, games: drawArcadeIcon, openwhen: drawOpenWhenIcon,
+    secret: drawSecretIcon, plan: drawPlanIcon, im: drawIMIcon,
+  }[win.window] || drawNoteIcon;
 }
 
 // The choices in the Start menu.
@@ -1232,6 +1289,8 @@ const WINDOW_DEFAULTS = {
   memoriesFolder: null, memoryItem: null, noteId: null, inboxMessage: null,
   password: "", passwordWrong: false,
   imScroll: Infinity, imMaxScroll: 0,   // the chat starts scrolled to the newest message
+  writingLetter: false,                 // is the "Write one" form open in Open when...?
+  passwordLetter: null,                 // the locked letter whose password box is showing
 };
 
 // The rest of the code was written for ONE window, using things like state.window and
@@ -1431,16 +1490,69 @@ function drawWindow(time, onTop = true) {
 // "OPEN WHEN..." LETTERS
 // ====================================================================================
 
+// Every "Open when..." letter on this computer:
+//   - Yours (OPEN_WHEN, written in this file) are for him, so only his side has them.
+//   - Letters written on the site (with "Write one") show up for the other person.
+// Locked letters always go at the very end.
+function openWhenLetters() {
+  const written = IS_TAYLER ? [] : OPEN_WHEN;
+  const received = state.remoteLetters.filter(letter => letter.from === OTHER);
+  const all = [...written, ...received];
+  const lockedAny = letter => isLocked(letter) || needsPassword(letter);
+  return [...all.filter(letter => !lockedAny(letter)), ...all.filter(lockedAny)];
+}
+
+// The name his browser remembers a letter by (to know if it's been read).
+function letterKey(letter) {
+  return letter.id ? `letter:${letter.id}` : `letter:${letter.when}`;
+}
+
+// Letters you've received on the site that haven't been opened yet.
+function unreadLetters() {
+  return state.remoteLetters.filter(letter => letter.from === OTHER && !remembers(`${SIDE}:${letterKey(letter)}`));
+}
+
 // The list of letters, or (once he picks one) that letter, opened up.
 function drawOpenWhen(inside) {
   const middle = (inside.left + inside.right) / 2;
 
+  // Typing a letter's password: a little box (a real text box) on top of the list.
+  if (state.passwordLetter) {
+    requestPanel("letterpass", { left: middle - 120, top: inside.top + 50, right: middle + 120, bottom: inside.top + 170 });
+  }
+
+  // Writing a new letter: the form (real text boxes) goes on top.
+  if (state.writingLetter) {
+    if (state.online !== "ok") {
+      drawOnlineProblem(inside, `write ${OTHER} a letter`);
+      drawButton(inside.left + 46, inside.bottom - 19, 76, 26, "Back", COLORS.cream, COLORS.text, () => {
+        playSound("click");
+        state.writingLetter = false;
+      });
+      return;
+    }
+    requestPanel("letter", inside);
+    return;
+  }
+
   if (state.openWhen === null) {
+    const letters = openWhenLetters();
+
+    // The "Write one" button along the top.
+    drawButton(middle, inside.top + 16, 170, 24, `Write ${OTHER} one`, COLORS.acceptFill, COLORS.acceptText, () => {
+      playSound("click");
+      state.writingLetter = true;
+    });
+
     // The list: an envelope (or a padlock, if it's locked) and "Open when ___" for each letter.
     // If there are more than fit, the mouse wheel scrolls the list.
     const rowHeight = 30;
-    const list = { left: inside.left, top: inside.top + 4, right: inside.right, bottom: inside.bottom - 4 };
-    const contentHeight = OPEN_WHEN.length * rowHeight + 4;
+    const list = { left: inside.left, top: inside.top + 32, right: inside.right, bottom: inside.bottom - 4 };
+    if (letters.length === 0) {
+      write(`No letters from ${OTHER} yet...`, middle, list.top + 50, FONTS.body, COLORS.text);
+      return;
+    }
+    const contentHeight = letters.length * rowHeight + 4;
     state.letterListMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
     state.letterListScroll = keepBetween(state.letterListScroll, 0, state.letterListMaxScroll);
     const hasScrollbar = state.letterListMaxScroll > 0;
@@ -1450,19 +1562,25 @@ function drawOpenWhen(inside) {
     ctx.beginPath();
     ctx.rect(list.left, list.top, list.right - list.left, list.bottom - list.top);
     ctx.clip();
-    OPEN_WHEN.forEach((letter, number) => {
+    letters.forEach((letter, number) => {
       const top = list.top + 4 + number * rowHeight - state.letterListScroll;
       if (top + rowHeight < list.top || top > list.bottom) return;
-      const locked = isLocked(letter);
+      // Locked by a date (counts down), or by a password (asks for it).
+      const locked = isLocked(letter) || needsPassword(letter);
+      const onClick = () => {
+        if (isLocked(letter)) showLockedLetter(letter);
+        else if (needsPassword(letter)) askForPassword(letter);
+        else openLetter(letter);
+      };
       const box = { left: inside.left + 8, top, right: inside.right - (hasScrollbar ? 16 : 8), bottom: top + rowHeight - 4,
-                    onClick: () => (locked ? showLockedLetter(letter) : openLetter(number)), id: `openwhen:${number}` };
+                    onClick, id: `openwhen:${number}` };
       // Only clickable if it's actually showing (not scrolled behind the edge).
       if (top >= list.top - 4 && top + rowHeight - 4 <= list.bottom + 4) hitBoxes.push(box);
       steppedBox(box.left, box.top, box.right, box.bottom, 3,
                  state.hoverId === box.id ? COLORS.titleBar : (locked ? COLORS.iconHover : COLORS.white), COLORS.text, 1.5);
       const rowMiddle = top + (rowHeight - 4) / 2;
       if (locked) drawPixels(LOCK, box.left + 17, rowMiddle - 6, 2, COLORS.text);
-      else drawSmallEnvelope(box.left + 22, rowMiddle, remembers(`letter:${number}`));
+      else drawSmallEnvelope(box.left + 22, rowMiddle, remembers(`${SIDE}:${letterKey(letter)}`));
       const title = `Open when ${letter.when}`;
       write(title, box.left + 44, rowMiddle + 1, fontThatFits(title, box.right - box.left - 54), COLORS.text, "left");
     });
@@ -1482,7 +1600,7 @@ function drawOpenWhen(inside) {
   }
 
   // One letter, opened: a white page with the words, and a Back button.
-  const letter = OPEN_WHEN[state.openWhen];
+  const letter = state.openWhen;
   const page = { left: inside.left + 10, top: inside.top + 8, right: inside.right - 10, bottom: inside.bottom - 40 };
   ctx.fillStyle = COLORS.white;
   ctx.fillRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
@@ -1566,6 +1684,21 @@ function isLocked(letter) {
   return todayString() < letter.unlocks;
 }
 
+// Does this letter have a password that hasn't been typed in yet? (Once it's typed
+// right, the browser remembers, so it only has to be typed once.)
+function needsPassword(letter) {
+  return !!letter.password && !remembers(`${SIDE}:unlocked:${letterKey(letter)}`);
+}
+
+// Clicking a password-locked letter: shows the password box.
+function askForPassword(letter) {
+  playSound("click");
+  state.passwordLetter = letter;
+  letterPassForm.reset();
+  letterPassPanel.querySelector(".problem").textContent = "";
+  setTimeout(() => letterPassForm.elements.password.focus(), 50);
+}
+
 // Clicking a locked letter: "Not yet!", with a countdown once there's a date.
 function showLockedLetter(letter) {
   let message = "Not yet! This one unlocks the day we meet 💗";
@@ -1601,10 +1734,10 @@ function flipPage(direction) {
   state.letterPage += direction;
 }
 
-function openLetter(number) {
+function openLetter(letter) {
   playSound("paper");
-  remember(`letter:${number}`);
-  state.openWhen = number;
+  remember(`${SIDE}:${letterKey(letter)}`);
+  state.openWhen = letter;
   state.letterPage = 0;
 }
 
@@ -1938,6 +2071,7 @@ state.online = database ? "connecting" : "offline";   // see drawOnlineProblem()
 state.ims = [];           // IM messages: { id, from, text, sentAt }
 state.oldNotes = [];      // his old Notepad notes, shown at the top of the chat
 state.remoteDates = [];   // dates you two have planned for each other (from Firebase)
+state.remoteLetters = []; // "Open when..." letters you two have written each other on the site
 
 
 // In the preview of his side (on your computer), nothing gets sent as him. Returns true
@@ -2057,6 +2191,31 @@ function startListening() {
     state.remoteDates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     checkForNewDates();
   }, failed);
+
+  database.collection("letters").orderBy("sentAt").onSnapshot(snapshot => {
+    state.remoteLetters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    checkForNewLetters();
+  }, failed);
+}
+
+// A pop-up for each new letter (once).
+let knownLetters = null;
+function checkForNewLetters() {
+  const unread = unreadLetters();
+  const isNew = knownLetters === null ? unread.length > 0 : unread.some(letter => !knownLetters.has(letter.id));
+  knownLetters = new Set(state.remoteLetters.map(letter => letter.id));
+  if (isNew) notify("NEW LETTER", `${OTHER} wrote you a new "Open when..." letter! 💌`);
+}
+
+// Saves a new "Open when..." letter and pings the other person.
+// password and unlocks (a day like "2026-12-25") are optional locks; "" means no lock.
+async function sendLetter(when, text, password = "", unlocks = "") {
+  if (blockedInPreview()) throw new Error("preview");
+  const letter = { when, text, from: ME, sentAt: firebase.firestore.FieldValue.serverTimestamp() };
+  if (password) letter.password = password;
+  if (unlocks) letter.unlocks = unlocks;
+  await database.collection("letters").add(letter);
+  pingOther(`💌 ${ME} wrote you a new "Open when..." letter on the little computer!`);
 }
 
 
@@ -2214,8 +2373,11 @@ function withInviteColors(colors, job) {
 //   - Planned ones show up for whoever they were sent TO (and for the sender too, if the
 //     other person suggested a new time and it's their turn to answer).
 function allInvites() {
-  const written = IS_TAYLER ? [] : INVITES;
-  const planned = state.remoteDates.filter(date => date.when && (date.from === OTHER || needsMyAnswer(date)));
+  // (A written invite that got a new time is replaced by the new one.)
+  const moved = id => state.remoteDates.some(date => date.rescheduleOf === id);
+  const written = IS_TAYLER ? [] : INVITES.filter(invite => !moved(invite.id));
+  const planned = state.remoteDates.filter(date => date.when &&
+    (date.from === OTHER || needsMyAnswer(date) || (date.rescheduleOf && !IS_TAYLER)));
   return [...written, ...planned.map(remoteInvite)];
 }
 
@@ -2264,6 +2426,31 @@ async function rescheduleRemoteDate(date, day, time) {
     when: firebase.firestore.Timestamp.fromDate(when),
     proposedBy: ME,
     status: "pending",
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+  pingOther(`🕐 ${ME} suggested a new time for your date: ${longDayIn(when, OTHER_TIME_ZONE)}, ${timeIn(when, OTHER_TIME_ZONE)} your time.`);
+}
+
+
+// Suggesting a new time for an invite written into this file. It becomes a planned date
+// (same words, new time) that the other person sees and can accept or move again.
+async function rescheduleWrittenInvite(invite, day, time) {
+  if (blockedInPreview()) throw new Error("preview");
+  const when = zonedTimeToDate(day, time, MY_TIME_ZONE);
+  await database.collection("dates").add({
+    from: ME,
+    to: OTHER,
+    rescheduleOf: invite.id,
+    opening: `${ME} suggested a new time!`,
+    subtitle: "For our date...",
+    title: invite.title,
+    plan: invite.plan,
+    bring: invite.bring,
+    when: firebase.firestore.Timestamp.fromDate(when),
+    declines: DECLINE_MESSAGES,
+    status: "pending",
+    proposedBy: ME,
+    sentAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
   pingOther(`🕐 ${ME} suggested a new time for your date: ${longDayIn(when, OTHER_TIME_ZONE)}, ${timeIn(when, OTHER_TIME_ZONE)} your time.`);
@@ -2643,6 +2830,105 @@ planPanel.querySelector(".again").addEventListener("click", () => {
   planPanel.querySelector(".fields").hidden = false;
 });
 
+// The "Write one" form for a new "Open when..." letter.
+const letterPanel = makePanel("letter", `
+  <form class="plan letter-form">
+    <label>Open when... <input name="when" maxlength="32" placeholder="you miss me" required></label>
+    <label>Your letter
+      <textarea name="text" maxlength="3000" rows="7" placeholder="hi baby..." required></textarea>
+    </label>
+    <p class="section">Lock it? (optional, leave empty for no lock)</p>
+    <div class="two">
+      <label>Password <input name="password" maxlength="30" placeholder="no password" autocomplete="off"></label>
+      <label>Unlocks on <input name="unlocks" type="date"></label>
+    </div>
+    <p class="problem"></p>
+    <div class="two">
+      <button type="button" class="cancel">Cancel</button>
+      <button>Send letter</button>
+    </div>
+  </form>`);
+const letterForm = letterPanel.querySelector("form");
+
+// Closes the form (in the window it's in) and empties it.
+function closeLetterForm() {
+  const win = state.windows.find(other => other.window === "openwhen");
+  if (win) win.writingLetter = false;
+  letterForm.reset();
+  letterPanel.querySelector(".problem").textContent = "";
+}
+
+letterPanel.querySelector(".cancel").addEventListener("click", () => {
+  playSound("click");
+  closeLetterForm();
+});
+
+letterForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const when = letterForm.elements.when.value.trim().replace(/^open when\s*/i, "");
+  const text = letterForm.elements.text.value.trim();
+  const password = letterForm.elements.password.value.trim();
+  const unlocks = letterForm.elements.unlocks.value;
+  const problem = letterPanel.querySelector(".problem");
+  if (!when || !text) {
+    problem.textContent = "Fill in both parts!";
+    return;
+  }
+  problem.textContent = "Sending...";
+  try {
+    await sendLetter(when, text, password, unlocks);
+    playSound("win", 0.5);
+    closeLetterForm();
+    showPopup("SENT", `Your letter is in ${OTHER}'s "Open when..." folder now! 💌`);
+  } catch (trouble) {
+    console.log("Couldn't send the letter:", trouble);
+    problem.textContent = "Couldn't send. Try again?";
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+
+// The password box for a locked letter.
+const letterPassPanel = makePanel("letterpass", `
+  <form class="reschedule">
+    <p class="big">This letter is locked</p>
+    <label>Password <input name="password" maxlength="30" autocomplete="off" required></label>
+    <p class="problem"></p>
+    <div class="two">
+      <button type="button" class="cancel">Cancel</button>
+      <button>Unlock</button>
+    </div>
+  </form>`);
+const letterPassForm = letterPassPanel.querySelector("form");
+
+// Closes the password box (in the window it's in).
+function closePasswordBox() {
+  const win = state.windows.find(other => other.window === "openwhen");
+  if (win) win.passwordLetter = null;
+}
+
+letterPassPanel.querySelector(".cancel").addEventListener("click", () => {
+  playSound("click");
+  closePasswordBox();
+});
+
+letterPassForm.addEventListener("submit", event => {
+  event.preventDefault();
+  const win = state.windows.find(other => other.window === "openwhen");
+  const letter = win && win.passwordLetter;
+  if (!letter) return;
+  // Capital letters and spaces at the ends don't matter.
+  const typed = letterPassForm.elements.password.value.trim().toLowerCase();
+  if (typed === letter.password.trim().toLowerCase()) {
+    remember(`${SIDE}:unlocked:${letterKey(letter)}`);
+    closePasswordBox();
+    withWindow(win, () => openLetter(letter));
+  } else {
+    playSound("buzzer", BUZZER_VOLUME);
+    letterPassPanel.querySelector(".problem").textContent = "Wrong password! Try again.";
+    letterPassForm.elements.password.select();
+  }
+});
+
 // The "Suggest a new time" box, shown on top of a planned date's letter.
 const reschedulePanel = makePanel("reschedule", `
   <form class="reschedule">
@@ -2676,7 +2962,8 @@ rescheduleForm.addEventListener("submit", async event => {
   const { day, time } = rescheduleForm.elements;
   const date = state.rescheduling;
   try {
-    await rescheduleRemoteDate(date, day.value, time.value);
+    if (date.written) await rescheduleWrittenInvite(date.written, day.value, time.value);
+    else await rescheduleRemoteDate(date, day.value, time.value);
     state.rescheduling = null;
     playSound("win", 0.5);
     closeInvite();
@@ -2690,10 +2977,16 @@ rescheduleForm.addEventListener("submit", async event => {
 // Opens the "Suggest a new time" box, starting at the date's current day and time.
 function openReschedule(date) {
   playSound("click");
-  const when = date.when.toDate();
-  rescheduleForm.elements.day.value = dayIn(when, MY_TIME_ZONE);
-  const parts = zonedParts(when, MY_TIME_ZONE);
-  rescheduleForm.elements.time.value = `${parts.hour}:${parts.minute}`;
+  if (date.written) {
+    // A written invite only knows its day, so it starts at that day, 9pm.
+    rescheduleForm.elements.day.value = date.written.date;
+    rescheduleForm.elements.time.value = "21:00";
+  } else {
+    const when = date.when.toDate();
+    rescheduleForm.elements.day.value = dayIn(when, MY_TIME_ZONE);
+    const parts = zonedParts(when, MY_TIME_ZONE);
+    rescheduleForm.elements.time.value = `${parts.hour}:${parts.minute}`;
+  }
   rescheduleForm.dispatchEvent(new Event("input"));
   state.rescheduling = date;
 }
@@ -3942,9 +4235,33 @@ function draw(time) {
   ctx.drawImage(background, 0, 0, WIDTH, HEIGHT);
   drawVase(time);
 
+  // A smaller invite floats over the desktop, so the desktop is drawn first, underneath it.
+  const smallInvite = state.mode === "invite" && state.inviteSmall;
+  if (smallInvite) drawDesktop(time);
+
   // A planned invite can have its own colors (see withInviteColors).
   const inviteColors = state.mode === "invite" && state.invite ? state.invite.colors : null;
   withInviteColors(inviteColors, () => {
+    // The small invite: everything is drawn shrunk down, inside a little framed screen.
+    const firstInviteBox = hitBoxes.length;
+    if (smallInvite) {
+      const corner1 = toSmallInvite(SCREEN.left, SCREEN.top);
+      const corner2 = toSmallInvite(SCREEN.right, SCREEN.bottom);
+      ctx.fillStyle = COLORS.text;                              // shadow
+      ctx.fillRect(corner1.x + 5, corner1.y + 5, corner2.x - corner1.x, corner2.y - corner1.y);
+      ctx.save();
+      ctx.translate(INVITE_SMALL_CENTER.x, INVITE_SMALL_CENTER.y);
+      ctx.scale(INVITE_SMALL_SCALE, INVITE_SMALL_SCALE);
+      ctx.translate(-SCREEN_CENTER.x, -SCREEN_CENTER.y);
+      // Keep confetti and sparkles inside the little screen.
+      ctx.beginPath();
+      ctx.rect(SCREEN.left, SCREEN.top, SCREEN.right - SCREEN.left, SCREEN.bottom - SCREEN.top);
+      ctx.clip();
+      // Clicks on the small invite shouldn't reach the desktop icons underneath.
+      hitBoxes.push({ left: SCREEN.left, top: SCREEN.top, right: SCREEN.right, bottom: SCREEN.bottom,
+                      onClick: () => {}, blocker: true });
+    }
+
     // Paint the screen blue all the way to the cream frame, covering the picture's
     // dark gray edge. (The desktop's wallpaper covers it instead.)
     if (state.mode !== "desktop") {
@@ -3975,6 +4292,22 @@ function draw(time) {
     if (state.mode === "invite") {
       showWaitingPopups();
       if (state.popup) drawPopup();
+    }
+
+    if (smallInvite) {
+      ctx.restore();
+      // A dark outline around the little screen.
+      const corner1 = toSmallInvite(SCREEN.left, SCREEN.top);
+      const corner2 = toSmallInvite(SCREEN.right, SCREEN.bottom);
+      ctx.strokeStyle = COLORS.text;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(corner1.x, corner1.y, corner2.x - corner1.x, corner2.y - corner1.y);
+      // Everything clickable in the invite moves to where it is on the small one.
+      for (let i = firstInviteBox; i < hitBoxes.length; i++) {
+        const box = hitBoxes[i];
+        const topLeft = toSmallInvite(box.left, box.top), bottomRight = toSmallInvite(box.right, box.bottom);
+        Object.assign(box, { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y });
+      }
     }
   });
 
@@ -4394,13 +4727,23 @@ function openInvite(invite) {
   resetInvite();
   state.invite = invite;
   state.mode = "invite";
+  state.inviteMinimized = false;
   startShow();
 }
 
 // "Suggest a new time": for a planned date, a real calendar to pick from. For the
 // invites written into this file, the old pop-up ("message me on Discord").
 function suggestOrReschedule() {
-  if (state.invite && state.invite.remote) openReschedule(state.invite.remote);
+  // (The calendar box needs the big invite, so it goes back to full size.)
+  if (state.invite && state.invite.remote) {
+    state.inviteSmall = false;
+    openReschedule(state.invite.remote);
+  } else if (state.invite && state.online === "ok" && !state.invite.preview) {
+    // An invite written into this file: the same calendar box. Sending it turns it into
+    // a planned date (with the new time) that the other person can accept.
+    state.inviteSmall = false;
+    openReschedule({ written: state.invite });
+  }
   else suggest();
 }
 
@@ -4409,6 +4752,9 @@ function closeInvite() {
   playSound("click");
   resetInvite();
   state.mode = "desktop";
+  state.invite = null;
+  state.inviteMinimized = false;
+  state.inviteSmall = false;
 }
 
 
@@ -4421,7 +4767,8 @@ async function typeText(where, words, delay, volume) {
   for (let count = 1; count <= words.length; count++) {
     await wait(delay);
     state[where] = words.slice(0, count);
-    if (words[count - 1] !== " ") playKeySound(volume);
+    // (Quiet while the invite is minimized.)
+    if (words[count - 1] !== " " && state.mode === "invite") playKeySound(volume);
   }
 }
 

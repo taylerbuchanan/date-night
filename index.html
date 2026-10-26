@@ -82,7 +82,21 @@
       padding: 3px 5px;
       width: 100%;
     }
-    .panel input:focus { background: #FFF7EE; }
+    .panel input:focus, .panel textarea:focus { background: #FFF7EE; }
+    .panel textarea {
+      font: inherit;
+      color: inherit;
+      box-sizing: border-box;
+      width: 100%;
+      border: 2px solid #45284A;
+      border-radius: 0;
+      outline: none;
+      background: #FFFFFF;
+      padding: 4px 5px;
+      resize: none;
+      font-weight: normal;
+      margin-top: 1px;
+    }
     .panel button {
       background: #C98298;
       color: #FFFFFF;
