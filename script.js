@@ -34,7 +34,7 @@ const INVITES = [
     title: `${RECIPIENT_NAME}, be my date?`,
     plan: "Top secret",
     bring: "Your cute self, and maybe some snacks",
-    when: "Monday, Oct 26\n9pm your time, 1pm my time",
+    when: "Monday, Oct 26\n9pm your time, 2pm my time",
   },
 ];
 
@@ -44,13 +44,103 @@ const START_BUTTON_TEXT = "Start";
 // Your name, for the "Miss ___" option in the Start menu.
 const YOUR_NAME = "Tayler";
 
-// The love note in the Notepad window. "\n" starts a new line ("\n\n" leaves a blank line).
-// Change it whenever you like! Keep it short enough to fit (about 8 lines).
-const LOVE_NOTE = "Hi Jacob,\n\nThis little computer is all yours. Whenever it's my turn to plan a date, it'll show up right here.\n\nI love you MORE hehe\n\nlove, Tayler";
+// LOVE NOTES. Each one shows up on his desktop as "love_note" (with a NEW tag).
+// Once he's opened and read it, it moves into Memories > Love notes by itself.
+//
+// TO WRITE A NEW ONE: copy one whole { ... }, block and paste it at the BOTTOM of the
+// list. Give it a new "id" that's never been used (the date works great), a "label" for
+// the Memories folder, and your note. Leave the old ones in the list so he can reread them.
+// "\n" starts a new line ("\n\n" leaves a blank line). Keep each one to about 8 lines.
+const LOVE_NOTES = [
+  {
+    id: "2026-10-25",
+    label: "Oct 25, 2026",
+    text: "Hi Jacob,\n\nThis little computer is all yours. Whenever it's my turn to plan a date, it'll show up right here.\n\nI love you MORE hehe\n\nlove, Tayler",
+  },
+];
 
 // The pop-ups from the Start menu.
 const MISS_YOU_MESSAGE = `${YOUR_NAME} misses you too. Like, a lot.`;
 const SHUT_DOWN_MESSAGE = "Nice try. This computer runs on love and never shuts down.";
+
+// Photos of you two, shown in Memories > Photos. To add one:
+//   1. Put the picture in the website/images/photos folder (make the folder if it's not there).
+//   2. Add a line here like:  { file: "first-date.jpg", label: "Oct 26", caption: "Our first game night!" },
+const PHOTOS = [];
+
+// The guestbook's Discord ping. When he sends a note, Discord tells you (without the note
+// itself). If junk pings ever show up, delete this webhook in Discord, make a new one,
+// and paste the new link here.
+const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1564168396155658311/9vqWn7Luv9RE5e5ihskt4G80UugDwYi7_5JmQDXFsWj0YWkD3y4ta2vIf-O0Dk3-TN0X";
+
+// The two clocks on the taskbar. These are official time zone names, so daylight
+// saving time is handled automatically. (Arizona never changes its clocks; Scotland does.)
+const YOUR_TIME_ZONE = "America/Phoenix";
+const HIS_TIME_ZONE = "Europe/London";
+
+// The "Open when..." letters. Each one is { when: "...", text: "..." }.
+// "when" finishes the sentence "Open when ___". "\n" starts a new line in the letter.
+// Add, remove, or rewrite them however you like!
+const OPEN_WHEN = [
+  {
+    when: "you miss me",
+    text: "hi my sweet boy :3\n\ni miss you too, probably more than you know. i wish i could just teleport to you rn and give you the biggest hug ever. it's so unfair that my favorite person lives a whole ocean away from me :(\n\nbut even though we're so far apart, you're still such a big part of my everyday life. you're the person i wanna tell all my random little thoughts to, the person i wanna laugh with, and the person i look forward to spending time with every day.\n\none day we won't have to say goodnight through a screen. i'll get to fall asleep next to you instead of in a discord call, and i genuinely cannot wait for that day.\n\nuntil then, just pretend i'm giving you a million kisses rn.\n\nmwah mwah mwah mwah mwah\n\ni love you so much ml. <3",
+  },
+  {
+    when: "you can't sleep",
+    text: "hi sleepyhead :3\n\nWHY ARE YOU AWAKE HMMMM???\n\nlet me guess. you've been coding for 900 hours arguing with claude trying to make something perfect LOL.\n\nwell, whatever the reason, i hope you can get some rest soon, baby.\n\ni wish i could cuddle up next to you until you fall asleep (and annoy you by stealing all the blankets hehe).\n\nyou don't have to figure everything out tonight. whatever you're working on will still be there tomorrow. i promise it's okay to give that big brain of yours a break sometimes.\n\nnow close those eyes and get some sleep, my love.\n\nmwah. sweet dreams ml",
+  },
+  {
+    when: "you're feeling sad",
+    text: "hi baby :(\n\ni wish i could be there to hold you right now. i hate thinking about my sweet boy being sad, especially when i'm too far away to give him a hug.\n\ni hope you know that you never have to pretend to be happy around me. you don't have to be funny or energetic or entertaining all the time. if you wanna talk, i'll listen. if you wanna cry, that's okay too. and if you just wanna sit in silence together, i'll happily do that.\n\ni love you on your good days and your bad days. even when you're quiet, grumpy, tired, or just not feeling like yourself.\n\nyou make my life so much happier just by being in it, and i hope i can do the same for you.\n\nyou're my favorite boy in the whole wide world. don't forget that, okay?\n\ni love you, sweet boy. 💗",
+  },
+  {
+    when: "you're overwhelmed",
+    text: "hi my love.\n\nfirst of all, i wish i could give you the biggest hug right now.\n\ni know your brain is always going a million miles an hour and you've always got some new idea or project you wanna work on. and while i absolutely love how passionate you are, i hope you remember that you don't have to do everything all at once.\n\nyou're allowed to take breaks. you're allowed to have days where you don't accomplish anything. and you're allowed to just exist without feeling like you need to be productive.\n\ni'm so proud of you, baby. not because of how much you accomplish, but because of the person you are.\n\nyou don't have to prove anything to me.\n\ni love you just as much when you're doing absolutely nothing as i do when you're making something amazing.\n\nplease be gentle with yourself, okay?\n\nyour wife loves you so so much.",
+  },
+  {
+    when: "you need my love",
+    text: "JACOBBBBB!!!\n\nHELLO???? DO YOU KNOW HOW MUCH I LOVE YOU????\n\nprobably not because i don't think there's actually a way for me to explain it properly 😭\n\ni love your silly little hehe's. i love your voice. i love how excited you get about the things you're passionate about. i love how smart and creative you are, even when i have absolutely no idea what you're talking about LMAO.\n\ni love that you randomly show me things you're making. i love when you call me your wife. i love when you do that silly little \"NO I LOVE U MORE\" thing even though you're WRONG because i obviously love you more.\n\nand i love the little things you probably don't even realize mean so much to me.\n\ni love YOU, jacob. not just the attention you give me or the things we do together. you.\n\nand i'd choose you a million times over.\n\nso HA. I LOVE YOU THE MOST. 💗",
+  },
+  {
+    when: "you want a kiss",
+    text: "MWAHHHHHHHH",
+  },
+  {
+    when: "we've had an argument",
+    text: "hi baby.\n\nif you're reading this, i'm guessing things might feel a little difficult between us right now.\n\ni just want you to remember something.\n\neven when we disagree, even when we misunderstand each other, and even when one of us is upset, i still love you.\n\nwe're two different people learning how to love each other, and we're not always going to get everything right.\n\ni know sometimes i struggle to explain my feelings, and sometimes we don't understand each other right away.\n\nyou mean so much to me, jacob.\n\ni don't expect us to be perfect. i just want us to keep listening to each other, being patient, and trying to understand where the other person is coming from.\n\nwe're on the same team, okay?\n\ni love you, even when things aren't easy.\n\nand you're still my favorite boy ever.\n\nMWAH i love you.",
+  },
+  {
+    when: "you need a laugh",
+    text: "67",
+  },
+  {
+    when: "you think of our future",
+    text: "hi future husband hehe :3\n\nsometimes i think about what it'll be like when we finally get to meet.\n\nlike actually seeing you standing in front of me instead of on a screen. hearing your voice without headphones. getting to hold your hand. hugging you for the first time.\n\nI'M GONNA BE SO NERVOUS LMAOOO.\n\nbut i'm also so excited.\n\ni think about all the little things we could do together. going on silly dates, playing games in the same room, watching anime while cuddling, or just doing absolutely nothing together.\n\neven boring everyday things sound exciting when i imagine doing them with you.\n\ni know we have a lot of distance between us right now, and i know the future isn't something we can plan perfectly.\n\nbut i really hope we get to experience all those little moments together someday.\n\nand when we finally do meet, i'm giving you the biggest hug of your entire life.\n\ni love you so much.",
+  },
+  {
+    when: "we're about to meet",
+    // LOCKED until the day you visit. Right now (null) it stays locked.
+    // Once you know the date, change null to the date in quotes, like: unlocks: "2027-06-14",
+    // On that day (his time), it unlocks by itself. Until then, it counts down.
+    unlocks: null,
+    text: "hi my sweet boy :3\n\nOH MY GOD. ITS ACTUALLY HAPPENING???? 😭\n\nif you're reading this, that means we're finally about to meet and i genuinely cannot believe it. after all the discord calls, falling asleep together, playing games, watching shows, and saying \"i wish you were here\" a million times, we're finally gonna be in the same place.\n\ni wonder if you're nervous right now hehe. because i can almost guarantee i'm freaking out LMAOOO.\n\nbut baby, if you are nervous, please don't be. i already love you so much. you don't have to worry about impressing me or knowing exactly what to say or do. you don't have to be anything other than yourself. that's the boy i fell in love with, remember?\n\ni don't care if we're awkward at first, if we don't know what to say, or if we just stand there giggling like idiots. honestly, that would be pretty cute 😭\n\ni keep thinking about what it's gonna feel like to finally hug you. to hear your voice without my headphones. to look into your eyes instead of at a screen. to actually hold your hand.\n\nand maybeeee finally get to kiss that handsome face i've been obsessing over hehe.\n\ni hope you know how special this moment is to me. out of all the people in the world, somehow i found you, a silly and sweet scottish boy who makes me smile every single day. and now i finally get to see you in person.\n\nso take a deep breath, ml. there's nothing to be scared of.\n\nit's just me. the same girl who's been calling you ml and sending you a million mwahs through a screen.\n\nexcept this time, the kisses are real. :3\n\nnow hurry up and come give your wife a hug.\n\ni love you so so much, jacob.\n\nsee you in a minute. HEHEHEHE",
+  },
+];
+
+// The secret folder. He types the password to open it (capital letters don't matter).
+const SECRET_PASSWORD = "mwahhh";
+const SECRET_HINT = "Hint: what this computer is called";
+
+// The coupons inside the secret folder. He clicks one to use it, and it gets stamped USED.
+const COUPONS = [
+  "Good for one movie of YOUR choice",
+  "Good for winning one argument",
+  "Good for one surprise voice call",
+  "Good for one cute selfie, on demand",
+  "Good for picking our next date",
+  "Good for one big hug (in person!)",
+];
 
 // How many hearts he can drop in "Catch the hearts" before it's game over.
 const CATCH_LIVES = 3;
@@ -261,6 +351,15 @@ const state = {
   startMenu: false,       // is the Start menu open?
   window: null,           // which window is open on the desktop: "notes", "memories", "game", or null
   game: null,             // the "Catch the hearts" game, while its window is open
+  openWhen: null,         // which "Open when..." letter is open (or null for the list)
+  letterPage: 0,          // which page of that letter he's on (for long letters)
+  letterListScroll: 0,    // how far the "Open when..." list is scrolled down
+  noteId: null,           // which love note is open in the Notepad window
+  memoriesFolder: null,   // which folder is open inside Memories: "invites", "notes", "photos", or null
+  memoryItem: null,       // which old note or photo is open inside that folder (or null)
+  password: "",           // what he's typed into the secret folder's password box
+  passwordWrong: false,   // did he just type the wrong password?
+  cat: null,              // the desktop cat
   title: "",              // the big typed words
   subtitle: "",           // the smaller typed words under them
   sparkleDim: SPARKLE_SPOTS.map(() => false),   // which sparkles are blinking
@@ -298,7 +397,7 @@ const sounds = {};
 
 // Load every sound file into memory ahead of time.
 ["key1", "key2", "key3", "key4", "click", "paper", "incoming", "chime", "buzzer",
- "jump", "coin", "crash", "flap", "flip", "gameover", "win"].forEach(name => {
+ "jump", "coin", "crash", "flap", "flip", "gameover", "win", "meow"].forEach(name => {
   fetch(`sounds/${name}.wav`)
     .then(response => response.arrayBuffer())
     .then(data => audio.decodeAudioData(data))
@@ -496,15 +595,27 @@ function drawDesktop(time) {
   // Every icon on the desktop: upcoming invites first, then the extras.
   const icons = [
     ...INVITES.filter(invite => !isPast(invite)).map(inviteIcon),
-    { label: "love_note", picture: drawNoteIcon, onClick: () => openWindow("notes") },
+    // Love notes he hasn't read yet (the one he's reading right now stays until he closes it).
+    ...LOVE_NOTES.filter(note => !noteIsRead(note) || state.noteId === note.id).map(note => ({
+      label: "love_note", picture: drawNoteIcon, onClick: () => openNote(note), tag: "new",
+    })),
+    { label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen") },
     { label: "Memories", picture: drawFolderIcon, onClick: () => openWindow("memories") },
     { label: "Arcade", picture: drawArcadeIcon, onClick: () => openWindow("games") },
+    // The secret folder (coupon book) is hidden for now. To bring it back, remove the // below.
+    // { label: "Secret", picture: drawSecretIcon, onClick: () => openWindow("secret") },
+    { label: "Notepad", picture: drawGuestbookIcon, onClick: () => openWindow("guestbook") },
+    // Only on YOUR side: the inbox where his notes show up.
+    ...(IS_TAYLER ? [{ label: "Inbox", picture: drawInboxIcon, onClick: () => openWindow("inbox"),
+                       tag: unreadMessages().length ? "new" : null }] : []),
   ];
   // They go down the left side in columns of 4, like a real desktop.
-  // (If you add lots of invites, a 5th icon starts a new column.)
+  // (The 5th icon starts a new column.)
   icons.forEach((icon, number) => {
     drawIcon(icon, 182 + Math.floor(number / 4) * 82, 80 + (number % 4) * 70);
   });
+
+  drawCat(time);
 
   if (state.window) drawWindow(time);
   drawTaskbar();
@@ -613,6 +724,18 @@ function drawNoteIcon(x, y) {
   [3, 8, 13].forEach(lineY => ctx.fillRect(x - 9, y + lineY, 18, 2));
 }
 
+// A little stack of envelopes, for "Open when...".
+function drawOpenWhenIcon(x, y) {
+  drawSmallEnvelope(x - 4, y - 6, false);
+  drawSmallEnvelope(x + 4, y + 4, false);
+}
+
+// A yellow folder with a padlock, for the secret folder.
+function drawSecretIcon(x, y) {
+  drawEmptyFolder(x, y);
+  drawPixels(LOCK, x - 5, y - 5, 2, COLORS.text);
+}
+
 // A yellow folder with a little heart.
 function drawFolderIcon(x, y) {
   drawEmptyFolder(x, y);
@@ -699,14 +822,20 @@ function drawTaskbar() {
   // keepsMenu: clicking the Start button shouldn't close the menu (it opens/closes it itself).
   hitBoxes.push({ ...button, onClick: toggleStartMenu, keepsMenu: true });
 
-  // The clock shows the time on HIS computer, like a real taskbar.
-  const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  write(time, right - 10, middle + 1, FONTS.small, COLORS.text, "right");
+  // Two clocks: your time and his time, with a little heart in between.
+  const clock = timeZone => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
+  const hisClock = `${RECIPIENT_NAME} ${clock(HIS_TIME_ZONE)}`;
+  const yourClock = `${YOUR_NAME} ${clock(YOUR_TIME_ZONE)}`;
+  write(hisClock, right - 10, middle + 1, FONTS.small, COLORS.text, "right");
+  ctx.font = FONTS.small;
+  const heartX = right - 10 - ctx.measureText(hisClock).width - 20;
+  drawPixels(HEART, heartX, middle - 5, 2, COLORS.heart);
+  write(yourClock, heartX - 6, middle + 1, FONTS.small, COLORS.text, "right");
 }
 
 // The choices in the Start menu.
 const START_MENU = [
-  { text: "Love note", onClick: () => openWindow("notes") },
+  { text: "Love notes", onClick: openLoveNotes },
   { text: "Memories", onClick: () => openWindow("memories") },
   { text: "Arcade", onClick: () => openWindow("games") },
   { text: `Miss ${YOUR_NAME}`, onClick: () => showPopup("MESSAGE", MISS_YOU_MESSAGE) },
@@ -798,7 +927,11 @@ function togglePowerMenu() {
 
 // Where windows (the love note, Memories, Games) open on the desktop.
 const WINDOW = { left: 250, top: 82, right: 592, bottom: 320 };
-const WINDOW_TITLES = { notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade" };
+const WINDOW_TITLES = {
+  notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade",
+  openwhen: "Open when...", secret: "Secret",
+  guestbook: `Notepad - leave ${YOUR_NAME} a note`, inbox: "Inbox",
+};
 
 // Where the open window is right now: normal size, or filling the whole computer screen
 // (above the taskbar) when he's clicked the full-screen button.
@@ -839,7 +972,8 @@ function drawWindow(time) {
   ctx.lineWidth = 3;
   ctx.strokeRect(left, top, right - left, bottom - top);
   ctx.strokeRect(left, top, right - left, 22);
-  const title = state.game ? GAMES[state.game.key].title : WINDOW_TITLES[state.window];
+  let title = state.game ? GAMES[state.game.key].title : WINDOW_TITLES[state.window];
+  if (state.window === "memories" && state.memoriesFolder) title += ` > ${MEMORY_FOLDERS[state.memoriesFolder].label}`;
   write(title, left + 10, top + 11, FONTS.small, COLORS.text, "left");
 
   // The X box.
@@ -870,7 +1004,755 @@ function drawWindow(time) {
   if (state.window === "notes") drawNotes(inside, time);
   if (state.window === "memories") drawMemories(inside);
   if (state.window === "games") drawGamesFolder(inside);
+  if (state.window === "openwhen") drawOpenWhen(inside);
+  if (state.window === "secret") drawSecret(inside, time);
+  if (state.window === "guestbook") drawGuestbook(inside, time);
+  if (state.window === "inbox") drawInbox(inside);
   if (state.game) drawGameWindow(time);
+}
+
+
+// ====================================================================================
+// "OPEN WHEN..." LETTERS
+// ====================================================================================
+
+// The list of letters, or (once he picks one) that letter, opened up.
+function drawOpenWhen(inside) {
+  const middle = (inside.left + inside.right) / 2;
+
+  if (state.openWhen === null) {
+    // The list: an envelope (or a padlock, if it's locked) and "Open when ___" for each letter.
+    // If there are more than fit, the mouse wheel scrolls the list.
+    const rowHeight = 30;
+    const list = { left: inside.left, top: inside.top + 4, right: inside.right, bottom: inside.bottom - 4 };
+    const contentHeight = OPEN_WHEN.length * rowHeight + 4;
+    state.letterListMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
+    state.letterListScroll = keepBetween(state.letterListScroll, 0, state.letterListMaxScroll);
+    const hasScrollbar = state.letterListMaxScroll > 0;
+
+    // Only show rows inside the list area (ones scrolled out of view get trimmed off).
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(list.left, list.top, list.right - list.left, list.bottom - list.top);
+    ctx.clip();
+    OPEN_WHEN.forEach((letter, number) => {
+      const top = list.top + 4 + number * rowHeight - state.letterListScroll;
+      if (top + rowHeight < list.top || top > list.bottom) return;
+      const locked = isLocked(letter);
+      const box = { left: inside.left + 8, top, right: inside.right - (hasScrollbar ? 16 : 8), bottom: top + rowHeight - 4,
+                    onClick: () => (locked ? showLockedLetter(letter) : openLetter(number)), id: `openwhen:${number}` };
+      // Only clickable if it's actually showing (not scrolled behind the edge).
+      if (top >= list.top - 4 && top + rowHeight - 4 <= list.bottom + 4) hitBoxes.push(box);
+      steppedBox(box.left, box.top, box.right, box.bottom, 3,
+                 state.hoverId === box.id ? COLORS.titleBar : (locked ? COLORS.iconHover : COLORS.white), COLORS.text, 1.5);
+      const rowMiddle = top + (rowHeight - 4) / 2;
+      if (locked) drawPixels(LOCK, box.left + 17, rowMiddle - 6, 2, COLORS.text);
+      else drawSmallEnvelope(box.left + 22, rowMiddle, remembers(`letter:${number}`));
+      const title = `Open when ${letter.when}`;
+      write(title, box.left + 44, rowMiddle + 1, fontThatFits(title, box.right - box.left - 54), COLORS.text, "left");
+    });
+    ctx.restore();
+
+    // A little pink scrollbar on the right, when there's more to scroll to.
+    if (hasScrollbar) {
+      const trackHeight = list.bottom - list.top;
+      const thumbHeight = Math.max(20, trackHeight * trackHeight / contentHeight);
+      const thumbTop = list.top + (trackHeight - thumbHeight) * state.letterListScroll / state.letterListMaxScroll;
+      ctx.fillStyle = COLORS.iconHover;
+      ctx.fillRect(list.right - 10, list.top, 6, trackHeight);
+      ctx.fillStyle = COLORS.acceptFill;
+      ctx.fillRect(list.right - 10, thumbTop, 6, thumbHeight);
+    }
+    return;
+  }
+
+  // One letter, opened: a white page with the words, and a Back button.
+  const letter = OPEN_WHEN[state.openWhen];
+  const page = { left: inside.left + 10, top: inside.top + 8, right: inside.right - 10, bottom: inside.bottom - 40 };
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+
+  const title = `Open when ${letter.when}`;
+  write(title, middle, page.top + 16, fontThatFits(title, page.right - page.left - 64), COLORS.text);
+  drawPixels(HEART, page.left + 10, page.top + 10, 2, COLORS.heart);
+  drawPixels(HEART, page.right - 24, page.top + 10, 2, COLORS.heart);
+  // Really short letters (one line, like "MWAHHH") show up big and centered, with hearts.
+  if (!letter.text.includes("\n") && letter.text.length <= 24) {
+    const centerY = (page.top + page.bottom) / 2 + 8;
+    write(letter.text, middle, centerY, fontThatFitsBig(letter.text, page.right - page.left - 40), COLORS.text);
+    [[-110, -38, 3], [96, -44, 2], [-90, 30, 2], [104, 26, 3], [-6, -58, 2]].forEach(([dx, dy, size]) => {
+      drawPixels(HEART, middle + dx, centerY + dy, size, COLORS.heart);
+    });
+    drawButton(inside.left + 50, inside.bottom - 19, 80, 26, "Back", COLORS.cream, COLORS.text, () => {
+      playSound("click");
+      state.openWhen = null;
+    });
+    return;
+  }
+
+  // Long letters are split into pages. This works out how many lines fit on one page.
+  const lineHeight = 16;
+  const perPage = Math.floor((page.bottom - page.top - 42) / lineHeight);
+  const lines = wrapWords(letter.text, FONTS.note, page.right - page.left - 24);
+
+  // Split the lines into pages. A blank line never starts a new page (it's just skipped).
+  const pageList = [[]];
+  lines.forEach(line => {
+    let current = pageList[pageList.length - 1];
+    if (current.length === perPage) {
+      current = [];
+      pageList.push(current);
+    }
+    if (current.length === 0 && line === "") return;
+    current.push(line);
+  });
+  const pages = pageList.length;
+  state.letterPage = keepBetween(state.letterPage, 0, pages - 1);
+
+  pageList[state.letterPage].forEach((line, number) => {
+    write(line, page.left + 12, page.top + 30 + number * lineHeight, FONTS.note, COLORS.text, "left", "top");
+  });
+
+  drawButton(inside.left + 50, inside.bottom - 19, 80, 26, "Back", COLORS.cream, COLORS.text, () => {
+    playSound("click");
+    state.openWhen = null;
+  });
+
+  // Only for letters with more than one page: "Page 1 of 2", and buttons to flip pages.
+  if (pages > 1) {
+    // The page number, small, at the bottom-right corner of the paper.
+    write(`page ${state.letterPage + 1} of ${pages}`, page.right - 10, page.bottom - 9, FONTS.tag, COLORS.text, "right");
+    if (state.letterPage > 0) {
+      drawButton(inside.right - 112, inside.bottom - 19, 40, 26, "<", COLORS.cream, COLORS.text, () => flipPage(-1));
+    }
+    if (state.letterPage < pages - 1) {
+      drawButton(inside.right - 54, inside.bottom - 19, 70, 26, "Next >", COLORS.acceptFill, COLORS.acceptText, () => flipPage(1));
+    }
+  }
+}
+
+// A big bold font (40 down to 14) that fits the words in this many pixels.
+function fontThatFitsBig(text, maxWidth) {
+  for (let size = 40; size > 14; size -= 2) {
+    ctx.font = `bold ${size}px 'Pixelify Sans'`;
+    if (ctx.measureText(text).width <= maxWidth) return ctx.font;
+  }
+  return "bold 14px 'Pixelify Sans'";
+}
+
+// Is this letter still locked? Letters without "unlocks" are never locked.
+// unlocks: null = locked until you pick a date. unlocks: "2027-06-14" = unlocks that day.
+function isLocked(letter) {
+  if (!("unlocks" in letter)) return false;
+  if (letter.unlocks === null) return true;
+  return todayString() < letter.unlocks;
+}
+
+// Clicking a locked letter: "Not yet!", with a countdown once there's a date.
+function showLockedLetter(letter) {
+  let message = "Not yet! This one unlocks the day we meet 💗";
+  if (letter.unlocks) {
+    // Count the days between today and the unlock day (both at midnight, his time).
+    const days = Math.round((new Date(`${letter.unlocks}T00:00`) - new Date(`${todayString()}T00:00`)) / 86400000);
+    message = days === 1 ? "Not yet! This one unlocks TOMORROW 💗"
+                         : `Not yet! This one unlocks in ${days} days 💗`;
+  }
+  playSound("buzzer", BUZZER_VOLUME);
+  state.popup = { title: "LOCKED", message };
+}
+
+// The mouse wheel scrolls the "Open when..." list when it's too long to fit.
+canvas.addEventListener("wheel", event => {
+  if (state.window !== "openwhen" || state.openWhen !== null || !state.letterListMaxScroll) return;
+  event.preventDefault();   // scroll the list, not the web page
+  state.letterListScroll = keepBetween(state.letterListScroll + event.deltaY * 0.5, 0, state.letterListMaxScroll);
+}, { passive: false });
+
+// The biggest bold font (14 down to 9) that fits the words in this many pixels.
+function fontThatFits(text, maxWidth) {
+  for (let size = 14; size > 9; size--) {
+    ctx.font = `bold ${size}px 'Pixelify Sans'`;
+    if (ctx.measureText(text).width <= maxWidth) return ctx.font;
+  }
+  return "bold 9px 'Pixelify Sans'";
+}
+
+function flipPage(direction) {
+  playSound("paper");
+  state.letterPage += direction;
+}
+
+function openLetter(number) {
+  playSound("paper");
+  remember(`letter:${number}`);
+  state.openWhen = number;
+  state.letterPage = 0;
+}
+
+// A tiny envelope (open if he's read it already, sealed with a heart if he hasn't).
+function drawSmallEnvelope(x, y, opened) {
+  if (opened) {
+    // Opened: a little letter (with a heart) sticking up out of the envelope.
+    ctx.fillStyle = COLORS.white;
+    ctx.fillRect(x - 8, y - 11, 16, 12);
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 8, y - 11, 16, 12);
+    drawPixels(HEART, x - 3.5, y - 9, 1, COLORS.heart);
+
+    // The front of the envelope, covering the bottom of the letter.
+    ctx.fillStyle = COLORS.envelopePaper;
+    ctx.fillRect(x - 12, y - 3, 24, 11);
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - 12, y - 3, 24, 11);
+    ctx.strokeStyle = COLORS.envelopeLine;
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y - 2); ctx.lineTo(x, y + 4); ctx.lineTo(x + 11, y - 2);
+    ctx.stroke();
+    return;
+  }
+
+  // Sealed: a closed envelope with a heart sticker.
+  ctx.fillStyle = COLORS.envelopePaper;
+  ctx.fillRect(x - 12, y - 8, 24, 16);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - 12, y - 8, 24, 16);
+  ctx.strokeStyle = COLORS.envelopeLine;
+  ctx.beginPath();
+  ctx.moveTo(x - 11, y - 7); ctx.lineTo(x, y + 1); ctx.lineTo(x + 11, y - 7);
+  ctx.stroke();
+  drawPixels(HEART, x - 4, y - 3, 1, COLORS.heart);
+}
+
+
+// ====================================================================================
+// THE SECRET FOLDER (a coupon book, behind a password)
+// ====================================================================================
+
+const LOCK = [
+  ".XXX.",
+  "X...X",
+  "X...X",
+  "XXXXX",
+  "XX.XX",
+  "XXXXX",
+];
+
+// Locked: a password box. Unlocked: the coupon book.
+function drawSecret(inside, time) {
+  if (remembers("secret:unlocked")) {
+    drawCoupons(inside);
+    return;
+  }
+  const middle = (inside.left + inside.right) / 2;
+
+  drawPixels(LOCK, middle - 10, inside.top + 16, 4, COLORS.text);
+  write("This folder is locked.", middle, inside.top + 56, FONTS.body, COLORS.text);
+  write(SECRET_HINT, middle, inside.top + 78, FONTS.small, COLORS.text);
+
+  // The password box. Each letter he types shows as a *, with a blinking cursor at the end.
+  const box = { left: middle - 90, top: inside.top + 94, right: middle + 90, bottom: inside.top + 120 };
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  const stars = "*".repeat(state.password.length);
+  write(stars, box.left + 8, box.top + 15, FONTS.body, COLORS.text, "left");
+  if (Math.floor(time / 500) % 2 === 0) {
+    ctx.font = FONTS.body;
+    ctx.fillStyle = COLORS.text;
+    ctx.fillRect(box.left + 10 + ctx.measureText(stars).width, box.top + 5, 2, 16);
+  }
+
+  if (state.passwordWrong) {
+    write("Wrong password! Try again.", middle, inside.top + 134, FONTS.small, COLORS.newTag);
+  } else {
+    write("Type the password, then press Enter", middle, inside.top + 134, FONTS.tag, COLORS.text);
+  }
+
+  drawButton(middle, inside.top + 164, 100, 28, "Unlock", COLORS.acceptFill, COLORS.acceptText, tryPassword);
+}
+
+// Checks the password. (Capital letters and spaces at the ends don't matter.)
+function tryPassword() {
+  if (state.password.trim().toLowerCase() === SECRET_PASSWORD.toLowerCase()) {
+    remember("secret:unlocked");
+    playSound("win", 0.6);
+  } else {
+    playSound("buzzer", BUZZER_VOLUME);
+    state.passwordWrong = true;
+  }
+  state.password = "";
+}
+
+// Typing goes into the password box while the locked secret folder is open.
+window.addEventListener("keydown", event => {
+  if (state.mode !== "desktop" || state.window !== "secret" || state.popup || remembers("secret:unlocked")) return;
+  if (event.key === "Enter") {
+    tryPassword();
+  } else if (event.key === "Backspace") {
+    event.preventDefault();
+    state.password = state.password.slice(0, -1);
+  } else if (event.key.length === 1 && state.password.length < 24) {
+    event.preventDefault();   // so Space doesn't scroll the page
+    state.password += event.key;
+    state.passwordWrong = false;
+    playKeySound(0.4);
+  }
+});
+
+// The coupon book: two columns of coupons. Used ones get a USED stamp.
+function drawCoupons(inside) {
+  const middle = (inside.left + inside.right) / 2;
+  write("Coupon Book", middle, inside.top + 14, FONTS.menu, COLORS.text);
+  write("Click a coupon to use it!", middle, inside.top + 30, FONTS.tag, COLORS.text);
+
+  const gap = 8, height = 44;
+  const width = (inside.right - inside.left - 24 - gap) / 2;
+  COUPONS.forEach((coupon, number) => {
+    const left = inside.left + 12 + (number % 2) * (width + gap);
+    const top = inside.top + 42 + Math.floor(number / 2) * (height + gap);
+    const used = remembers(`coupon:${number}`);
+    const box = { left, top, right: left + width, bottom: top + height, id: `coupon:${number}`,
+                  onClick: () => useCoupon(number) };
+    if (!used) hitBoxes.push(box);
+
+    // A ticket with a dotted pink line inside its edge.
+    const hovered = !used && state.hoverId === box.id;
+    steppedBox(box.left, box.top, box.right, box.bottom, 3, hovered ? COLORS.titleBar : COLORS.cream, COLORS.text, 1.5);
+    ctx.strokeStyle = COLORS.envelopeLine;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(box.left + 4, box.top + 4, width - 8, height - 8);
+    ctx.setLineDash([]);
+
+    drawPixels(HEART, box.left + 9, top + height / 2 - 6, 2, COLORS.heart);
+    const lines = wrapWords(coupon, FONTS.tag, width - 38);
+    lines.forEach((line, lineNumber) => {
+      const y = top + height / 2 - ((lines.length - 1) * 12) / 2 + lineNumber * 12;
+      write(line, box.left + 28, y, FONTS.tag, COLORS.text, "left");
+    });
+
+    // The USED stamp: tilted pink letters in a box.
+    if (used) {
+      ctx.save();
+      ctx.translate(box.left + width / 2, top + height / 2);
+      ctx.rotate(-0.2);
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = COLORS.newTag;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-30, -11, 60, 22);
+      write("USED", 0, 1, FONTS.menu, COLORS.newTag);
+      ctx.restore();
+    }
+  });
+}
+
+function useCoupon(number) {
+  playSound("coin", 0.6);
+  remember(`coupon:${number}`);
+  showPopup("COUPON", `Coupon used! Send ${YOUR_NAME} a screenshot to cash it in.`);
+}
+
+
+// ====================================================================================
+// THE DESKTOP CAT
+// ====================================================================================
+
+// A little white cat (facing right). W = white fur, E = eyes, P = pink nose.
+const CAT_WALK_1 = [
+  ".........W..W",
+  ".........WWWW",
+  "W........WEWE",
+  "W........WWPW",
+  ".W.WWWWWWWWW.",
+  "..WWWWWWWWWW.",
+  "..WWWWWWWWW..",
+  "..W..W..W..W.",
+];
+const CAT_WALK_2 = [...CAT_WALK_1.slice(0, 7), "...W.W...W.W."];
+const CAT_SIT = [
+  ".........W..W",
+  ".........WWWW",
+  ".........WEWE",
+  ".........WWPW",
+  "......WWWWWW.",
+  ".....WWWWWWW.",
+  "WW...WWWWWWW.",
+  ".WWWWWWWWWWW.",
+];
+const CAT_COLORS = { W: "#FFFFFF", E: "#45284A", P: "#F4A6BD" };
+const CAT_OUTLINE = { W: "#45284A", E: "#45284A", P: "#45284A" };
+const CAT_SIZE = 3;   // how big each of the cat's squares is (bigger = bigger cat)
+const CAT_WIDTH = 13 * CAT_SIZE, CAT_HEIGHT = 8 * CAT_SIZE;
+const CAT_LEFT = 250, CAT_RIGHT = 600;   // how far left and right it wanders
+
+// Flips a picture left-to-right (so the cat can face the other way).
+function mirror(rows) {
+  return rows.map(row => [...row].reverse().join(""));
+}
+
+// The cat wanders along the bottom of the screen, sits for a bit, then wanders again.
+function drawCat(time) {
+  if (!state.cat) {
+    state.cat = { x: 420, direction: 1, sitting: false, timer: 4, meow: 0, lastTime: time };
+  }
+  const cat = state.cat;
+  const seconds = Math.min(0.05, (time - cat.lastTime) / 1000);
+  cat.lastTime = time;
+
+  cat.timer -= seconds;
+  cat.meow = Math.max(0, cat.meow - seconds);
+  if (cat.sitting) {
+    if (cat.timer <= 0) {
+      // Done sitting: walk off in a random direction.
+      cat.sitting = false;
+      cat.direction = Math.random() < 0.5 ? -1 : 1;
+      cat.timer = between(3, 7, Math.random());
+    }
+  } else {
+    cat.x += cat.direction * 22 * seconds;
+    // Turn around at the edges.
+    if (cat.x < CAT_LEFT || cat.x > CAT_RIGHT - CAT_WIDTH) {
+      cat.direction = -cat.direction;
+      cat.x = keepBetween(cat.x, CAT_LEFT, CAT_RIGHT - CAT_WIDTH);
+    }
+    if (cat.timer <= 0) {
+      cat.sitting = true;
+      cat.timer = between(2, 5, Math.random());
+    }
+  }
+
+  let picture = cat.sitting ? CAT_SIT : (Math.floor(time / 200) % 2 ? CAT_WALK_1 : CAT_WALK_2);
+  if (cat.direction < 0) picture = mirror(picture);
+  const x = Math.round(cat.x), y = TASKBAR.top - CAT_HEIGHT - 1;
+
+  // A dark outline (the same picture, nudged one square each way), then the cat itself.
+  [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([dx, dy]) => {
+    drawSprite(picture, CAT_OUTLINE, x + dx * CAT_SIZE, y + dy * CAT_SIZE, CAT_SIZE);
+  });
+  drawSprite(picture, CAT_COLORS, x, y, CAT_SIZE);
+
+  // Clicking the cat: it sits, says meow, and a heart pops up.
+  hitBoxes.push({ left: x - 2, top: y - 2, right: x + CAT_WIDTH + 2, bottom: y + CAT_HEIGHT + 2, onClick: petCat });
+  if (cat.meow > 0) {
+    const bubbleX = x + CAT_WIDTH / 2;
+    steppedBox(bubbleX - 24, y - 26, bubbleX + 24, y - 8, 2, COLORS.white, COLORS.text, 1.5);
+    write("meow!", bubbleX, y - 16.5, FONTS.tag, COLORS.text);
+    drawPixels(HEART, bubbleX - 7, y - 40 - (1.5 - cat.meow) * 8, 2, COLORS.heart);
+  }
+}
+
+function petCat() {
+  const cat = state.cat;
+  cat.sitting = true;
+  cat.timer = 2.5;
+  cat.meow = 1.5;
+  // If there's a meow.wav in the sounds folder, it plays that. If not, a little click.
+  if (sounds.meow) playSound("meow", 0.6);
+  else playSound("click");
+}
+
+
+// ====================================================================================
+// THE GUESTBOOK (he writes you notes) AND YOUR INBOX (where you read them)
+// ====================================================================================
+//
+// His notes are saved in Firebase (a free Google service). Discord pings you when one
+// arrives, without saying what it is. Only YOUR Google account can read them.
+//
+// YOUR side of the site is the normal link with ?inbox on the end (bookmark it!):
+//   https://taylerbuchanan.github.io/date-night/?inbox
+// The plain link (without ?inbox) is always HIS side, even on your computer.
+
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA_kebLMqLzl7VF1_USywD42NcN8-7qIcU",
+  authDomain: "little-computer-2f668.firebaseapp.com",
+  projectId: "little-computer-2f668",
+  storageBucket: "little-computer-2f668.firebasestorage.app",
+  messagingSenderId: "521343865256",
+  appId: "1:521343865256:web:e46175fd71f6f526f5cd9d",
+};
+
+// The longest note he can write, in letters.
+const GUESTBOOK_MAX = 400;
+
+const IS_TAYLER = PREVIEW.has("inbox");
+
+// Connect to Firebase. (If it can't load, like with no internet, the guestbook says so.)
+let database = null, firebaseAuth = null;
+try {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  database = firebase.firestore();
+  firebaseAuth = firebase.auth();
+} catch (problem) {
+  console.log("Firebase didn't load:", problem);
+}
+
+// ---------- His side: writing a note ----------
+
+state.guestText = "";       // what he's typed so far
+state.guestStatus = "";     // "", "sending", "sent", or "error"
+
+function drawGuestbook(inside, time) {
+  const middle = (inside.left + inside.right) / 2;
+
+  if (state.guestStatus === "sent") {
+    drawPixels(HEART, middle - 14, inside.top + 40, 4, COLORS.heart);
+    write("Sent!", middle, inside.top + 86, FONTS.celebrationSubtitle, COLORS.text);
+    write(`${YOUR_NAME} will get your note soon.`, middle, inside.top + 114, FONTS.note, COLORS.text);
+    drawButton(middle, inside.top + 160, 160, 30, "Write another", COLORS.cream, COLORS.text, () => {
+      playSound("click");
+      state.guestStatus = "";
+    });
+    return;
+  }
+
+  write(`Write ${YOUR_NAME} a note:`, inside.left + 12, inside.top + 14, FONTS.menu, COLORS.text, "left");
+
+  // The writing box, with the words wrapped to fit and a blinking cursor at the end.
+  const box = { left: inside.left + 10, top: inside.top + 28, right: inside.right - 10, bottom: inside.bottom - 42 };
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
+
+  const lines = wrapWords(state.guestText, FONTS.note, box.right - box.left - 20);
+  const lineHeight = 17;
+  // If it's too long to show, only show the last lines that fit.
+  const fits = Math.floor((box.bottom - box.top - 10) / lineHeight);
+  const shown = lines.slice(-fits);
+  shown.forEach((line, number) => {
+    write(line, box.left + 8, box.top + 6 + number * lineHeight, FONTS.note, COLORS.text, "left", "top");
+  });
+  if (!state.guestText) {
+    write("Start typing...", box.left + 8, box.top + 6, FONTS.note, COLORS.lostLife, "left", "top");
+  }
+  if (Math.floor(time / 500) % 2 === 0 && state.guestStatus !== "sending") {
+    ctx.font = FONTS.note;
+    const lastLine = shown[shown.length - 1] || "";
+    ctx.fillStyle = COLORS.text;
+    ctx.fillRect(box.left + 9 + ctx.measureText(lastLine).width, box.top + 6 + (shown.length - 1) * lineHeight, 2, 15);
+  }
+
+  // How many letters he has left, and any problems.
+  let status = `${GUESTBOOK_MAX - state.guestText.length} letters left`;
+  if (state.guestStatus === "sending") status = "Sending...";
+  if (state.guestStatus === "error") status = "Couldn't send. Try again?";
+  write(status, inside.left + 12, inside.bottom - 19, FONTS.tag, state.guestStatus === "error" ? COLORS.newTag : COLORS.text, "left");
+
+  drawButton(inside.right - 58, inside.bottom - 19, 90, 26, "Send", COLORS.acceptFill, COLORS.acceptText, sendNote);
+}
+
+// Typing (and pasting) goes into the note while the guestbook is open.
+function guestbookIsTyping() {
+  return state.mode === "desktop" && state.window === "guestbook" && !state.popup &&
+         state.guestStatus !== "sending" && state.guestStatus !== "sent";
+}
+
+window.addEventListener("keydown", event => {
+  if (!guestbookIsTyping() || event.ctrlKey || event.metaKey) return;
+  if (event.key === "Backspace") {
+    event.preventDefault();
+    state.guestText = state.guestText.slice(0, -1);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    if (state.guestText.length < GUESTBOOK_MAX) state.guestText += "\n";
+  } else if (event.key.length === 1 && state.guestText.length < GUESTBOOK_MAX) {
+    event.preventDefault();   // so Space doesn't scroll the page
+    state.guestText += event.key;
+    playKeySound(0.3);
+  } else {
+    return;
+  }
+  if (state.guestStatus === "error") state.guestStatus = "";
+});
+
+window.addEventListener("paste", event => {
+  if (!guestbookIsTyping()) return;
+  const pasted = event.clipboardData.getData("text");
+  state.guestText = (state.guestText + pasted).slice(0, GUESTBOOK_MAX);
+});
+
+// Saves the note in Firebase, then pings you on Discord (without the note itself).
+async function sendNote() {
+  const text = state.guestText.trim();
+  if (!text || state.guestStatus === "sending") return;
+  playSound("click");
+  state.guestStatus = "sending";
+  try {
+    await database.collection("guestbook").add({
+      text,
+      from: RECIPIENT_NAME,
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    state.guestText = "";
+    state.guestStatus = "sent";
+    playSound("win", 0.5);
+    // The Discord ping. If it fails, that's okay: the note is already saved.
+    fetch(DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: `💌 ${RECIPIENT_NAME} left you a message on the little computer! Open your inbox to read it.` }),
+    }).catch(() => {});
+  } catch (problem) {
+    console.log("Couldn't send the note:", problem);
+    state.guestStatus = "error";
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+}
+
+// ---------- Your side: the inbox ----------
+
+state.messages = [];          // his notes, newest first: { id, text, sentAt }
+state.inboxSignedIn = false;  // are you signed in with your Google account?
+state.inboxMessage = null;    // which note is open (or null for the list)
+state.inboxProblem = "";      // a problem to show, like "That account can't read these"
+
+// Notes you haven't opened yet. (Your browser remembers which ones you've read.)
+function unreadMessages() {
+  return state.messages.filter(message => !remembers(`message:${message.id}`));
+}
+
+// When you're signed in, keep listening for his notes. New ones show up right away,
+// with a "New message!" pop-up, even while the site is already open.
+let knownMessageIds = null;
+if (IS_TAYLER && firebaseAuth) {
+  firebaseAuth.onAuthStateChanged(user => {
+    state.inboxSignedIn = !!user;
+    if (!user) return;
+    database.collection("guestbook").orderBy("sentAt", "desc").onSnapshot(snapshot => {
+      state.inboxProblem = "";
+      state.messages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        text: doc.data().text,
+        sentAt: doc.data().sentAt ? doc.data().sentAt.toDate() : new Date(),
+      }));
+      const unread = unreadMessages();
+      // Pop up once when the site opens (if there's anything unread), and again for each new note.
+      const isNew = knownMessageIds === null ? unread.length > 0
+                                             : unread.some(message => !knownMessageIds.has(message.id));
+      knownMessageIds = new Set(state.messages.map(message => message.id));
+      if (isNew && state.window !== "inbox") {
+        playSound("incoming");
+        state.popup = { title: "NEW MESSAGE", message: `You have a new message from ${RECIPIENT_NAME}! Open your Inbox to read it.` };
+      }
+    }, problem => {
+      console.log("Couldn't load messages:", problem);
+      state.inboxProblem = "This account can't read the notes. Try signing in with your own Google account.";
+    });
+  });
+}
+
+function signIn() {
+  playSound("click");
+  state.inboxProblem = "";
+  firebaseAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(problem => {
+    console.log("Sign-in problem:", problem);
+    state.inboxProblem = "Sign-in didn't work. Try again?";
+  });
+}
+
+function drawInbox(inside) {
+  const middle = (inside.left + inside.right) / 2;
+
+  if (!firebaseAuth) {
+    write("The inbox can't connect right now.", middle, inside.top + 90, FONTS.note, COLORS.text);
+    return;
+  }
+  if (!state.inboxSignedIn) {
+    drawPixels(LOCK, middle - 10, inside.top + 24, 4, COLORS.text);
+    write(`Sign in to read ${RECIPIENT_NAME}'s notes`, middle, inside.top + 70, FONTS.body, COLORS.text);
+    if (state.inboxProblem) write(state.inboxProblem, middle, inside.top + 94, FONTS.tag, COLORS.newTag);
+    drawButton(middle, inside.top + 132, 200, 30, "Sign in with Google", COLORS.acceptFill, COLORS.acceptText, signIn);
+    return;
+  }
+  if (state.inboxProblem) {
+    const lines = wrapWords(state.inboxProblem, FONTS.note, inside.right - inside.left - 40);
+    lines.forEach((line, number) => write(line, middle, inside.top + 80 + number * 18, FONTS.note, COLORS.newTag));
+    return;
+  }
+
+  // One note, opened.
+  if (state.inboxMessage) {
+    const message = state.inboxMessage;
+    const page = { left: inside.left + 10, top: inside.top + 8, right: inside.right - 10, bottom: inside.bottom - 40 };
+    ctx.fillStyle = COLORS.white;
+    ctx.fillRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+    write(`From ${RECIPIENT_NAME}, ${formatDate(message.sentAt)}`, page.left + 12, page.top + 14, FONTS.small, COLORS.text, "left");
+    const lines = wrapWords(message.text, FONTS.note, page.right - page.left - 24);
+    lines.slice(0, 9).forEach((line, number) => {
+      write(line, page.left + 12, page.top + 28 + number * 16, FONTS.note, COLORS.text, "left", "top");
+    });
+    drawButton(inside.left + 46, inside.bottom - 19, 76, 26, "Back", COLORS.cream, COLORS.text, () => {
+      playSound("click");
+      state.inboxMessage = null;
+    });
+    return;
+  }
+
+  // The list of notes, newest first. Unread ones are pink with a NEW tag.
+  if (state.messages.length === 0) {
+    drawEmptyFolderMessage(inside, "No notes yet...", "but he'll write one soon!");
+    return;
+  }
+  const rowHeight = 30;
+  state.messages.slice(0, 6).forEach((message, number) => {
+    const top = inside.top + 8 + number * rowHeight;
+    const unread = !remembers(`message:${message.id}`);
+    const box = { left: inside.left + 8, top, right: inside.right - 8, bottom: top + rowHeight - 4,
+                  onClick: () => openMessage(message), id: `message:${message.id}` };
+    hitBoxes.push(box);
+    steppedBox(box.left, box.top, box.right, box.bottom, 3,
+               state.hoverId === box.id ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
+    drawSmallEnvelope(box.left + 20, top + 13, !unread);
+    write(formatDate(message.sentAt), box.left + 40, top + 13, FONTS.small, COLORS.text, "left");
+    if (unread) {
+      steppedBox(box.right - 44, top + 5, box.right - 8, top + 21, 2, COLORS.newTag, COLORS.text, 1.5);
+      write("NEW", box.right - 26, top + 13.5, FONTS.tag, COLORS.white);
+    }
+  });
+}
+
+function openMessage(message) {
+  playSound("paper");
+  remember(`message:${message.id}`);
+  state.inboxMessage = message;
+}
+
+// A date like "Oct 26, 9:15 PM".
+function formatDate(date) {
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// ---------- The icons ----------
+
+// A pink book with a heart, for the guestbook.
+function drawGuestbookIcon(x, y) {
+  steppedBox(x - 15, y - 18, x + 15, y + 18, 2, COLORS.acceptFill, COLORS.text, 2);
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillRect(x - 11, y - 14, 3, 28);     // the pages along the spine
+  drawPixels(HEART, x - 5, y - 6, 2, COLORS.white);
+}
+
+// A little mailbox with a flag (pink when there's unread mail), for your inbox.
+function drawInboxIcon(x, y) {
+  steppedBox(x - 18, y - 12, x + 14, y + 10, 4, COLORS.screen, COLORS.text, 2);
+  ctx.fillStyle = COLORS.text;
+  ctx.fillRect(x - 2, y + 10, 4, 10);        // the post
+  ctx.fillRect(x + 14, y - 16, 2, 14);       // the flag pole
+  ctx.fillStyle = unreadMessages().length ? COLORS.heart : COLORS.lostLife;
+  ctx.fillRect(x + 16, y - 16, 8, 6);        // the flag
+  drawSmallEnvelope(x - 2, y, false);
 }
 
 // The love note, like an old Notepad window.
@@ -887,7 +1769,8 @@ function drawNotes(inside, time) {
   ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
 
   // The note itself, wrapped to fit.
-  const lines = wrapWords(LOVE_NOTE, FONTS.note, page.right - page.left - 20);
+  const note = LOVE_NOTES.find(note => note.id === state.noteId) || LOVE_NOTES[LOVE_NOTES.length - 1];
+  const lines = wrapWords(note.text, FONTS.note, page.right - page.left - 20);
   const lineHeight = 19;
   lines.forEach((line, number) => {
     write(line, page.left + 10, page.top + 8 + number * lineHeight, FONTS.note, COLORS.text, "left", "top");
@@ -903,22 +1786,194 @@ function drawNotes(inside, time) {
   }
 }
 
-// The Memories folder: an icon for every date that's already happened.
+// The Memories folder has three folders inside it: Invitations, Love notes, and Photos.
+const MEMORY_FOLDERS = {
+  invites: { label: "Invitations", picture: (x, y) => { drawEmptyFolder(x, y); drawSmallEnvelope(x, y + 3, false); } },
+  notes: { label: "Love notes", picture: (x, y) => { drawEmptyFolder(x, y); drawPixels(HEART, x - 7, y - 4, 2, COLORS.heart); } },
+  photos: { label: "Photos", picture: (x, y) => { drawEmptyFolder(x, y); drawMiniPhoto(x, y + 2); } },
+};
+
+// A tiny photo (a sky with a green hill and a sun), for the Photos folder.
+function drawMiniPhoto(x, y) {
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(x - 11, y - 9, 22, 18);
+  ctx.fillStyle = COLORS.screen;
+  ctx.fillRect(x - 9, y - 7, 18, 14);
+  ctx.fillStyle = "#8BC77B";
+  ctx.fillRect(x - 9, y + 2, 18, 5);
+  ctx.fillStyle = "#FFE08A";
+  ctx.fillRect(x + 3, y - 5, 4, 4);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - 11, y - 9, 22, 18);
+}
+
+// The images for the Photos folder, loaded the first time they're needed.
+const photoImages = {};
+function photoImage(file) {
+  if (!photoImages[file]) {
+    photoImages[file] = new Image();
+    photoImages[file].src = `images/photos/${file}`;
+  }
+  return photoImages[file];
+}
+
+// What's inside Memories right now: the three folders, or one folder's contents.
 function drawMemories(inside) {
-  const memories = INVITES.filter(isPast);
-  if (memories.length === 0) {
-    const middle = (inside.left + inside.right) / 2;
-    write("No memories yet...", middle, inside.top + 90, FONTS.body, COLORS.text);
-    write("but not for long!", middle, inside.top + 116, FONTS.body, COLORS.text);
-    drawPixels(HEART, middle - 7, inside.top + 140, 2, COLORS.heart);
+  const middle = (inside.left + inside.right) / 2;
+  const folder = state.memoriesFolder;
+
+  if (!folder) {
+    Object.entries(MEMORY_FOLDERS).forEach(([key, info], number) => {
+      drawIcon({ label: info.label, picture: info.picture, onClick: () => openMemoryFolder(key) },
+               middle - 90 + number * 90, inside.top + 70);
+    });
     return;
   }
-  // Icons in rows of 4. Memories never say NEW, but keep the check if he accepted.
+
+  // Inside a folder, a Back button goes up to the three folders.
+  const back = () => {
+    playSound("click");
+    if (state.memoryItem !== null) state.memoryItem = null;
+    else state.memoriesFolder = null;
+  };
+  drawButton(inside.left + 46, inside.bottom - 19, 76, 26, "Back", COLORS.cream, COLORS.text, back);
+
+  if (folder === "invites") drawMemoryInvites(inside);
+  if (folder === "notes") drawMemoryNotes(inside);
+  if (folder === "photos") drawMemoryPhotos(inside);
+}
+
+// "Nothing here yet" for an empty folder.
+function drawEmptyFolderMessage(inside, line1, line2) {
+  const middle = (inside.left + inside.right) / 2;
+  write(line1, middle, inside.top + 64, FONTS.body, COLORS.text);
+  write(line2, middle, inside.top + 90, FONTS.body, COLORS.text);
+  drawPixels(HEART, middle - 7, inside.top + 110, 2, COLORS.heart);
+}
+
+// Where the Nth icon goes inside a Memories folder (rows of 4).
+function memorySpot(inside, number) {
+  return [inside.left + 50 + (number % 4) * 80, inside.top + 40 + Math.floor(number / 4) * 74];
+}
+
+// Invitations: an envelope for every date that's already happened.
+// Memories never say NEW, but keep the check if he accepted.
+function drawMemoryInvites(inside) {
+  const memories = INVITES.filter(isPast);
+  if (memories.length === 0) {
+    drawEmptyFolderMessage(inside, "No past dates yet...", "but not for long!");
+    return;
+  }
   memories.forEach((invite, number) => {
     const icon = inviteIcon(invite);
     if (icon.tag === "new") icon.tag = null;
-    drawIcon(icon,inside.left + 50 + (number % 4) * 80, inside.top + 46 + Math.floor(number / 4) * 74);
+    drawIcon(icon, ...memorySpot(inside, number));
   });
+}
+
+// Has he read this love note yet? (His browser remembers.)
+function noteIsRead(note) {
+  return remembers(`note:${note.id}`);
+}
+
+// The love notes he's already read, newest first.
+function readNotes() {
+  return LOVE_NOTES.filter(noteIsRead).reverse();
+}
+
+// Opens a love note from the desktop, and remembers he's read it.
+// (It stays on the desktop until he closes it, then it's in Memories > Love notes.)
+function openNote(note) {
+  openWindow("notes");
+  state.noteId = note.id;
+  remember(`note:${note.id}`);
+}
+
+// "Love notes" in the Start menu: opens Memories > Love notes.
+function openLoveNotes() {
+  openWindow("memories");
+  state.memoriesFolder = "notes";
+}
+
+// Love notes: every one he's already read, and clicking one opens it.
+function drawMemoryNotes(inside) {
+  const notes = readNotes();
+  if (state.memoryItem !== null) {
+    drawOldNote(inside, notes[state.memoryItem]);
+    return;
+  }
+  if (notes.length === 0) {
+    drawEmptyFolderMessage(inside, "Love notes you've read", "will be saved here");
+    return;
+  }
+  notes.forEach((note, number) => {
+    drawIcon({ label: note.label, picture: drawNoteIcon, onClick: () => openMemoryItem(number) },
+             ...memorySpot(inside, number));
+  });
+}
+
+// One old love note, on a white page.
+function drawOldNote(inside, note) {
+  const page = { left: inside.left + 10, top: inside.top + 8, right: inside.right - 10, bottom: inside.bottom - 40 };
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
+  const lines = wrapWords(note.text, FONTS.note, page.right - page.left - 24);
+  lines.forEach((line, number) => {
+    write(line, page.left + 12, page.top + 7 + number * 16, FONTS.note, COLORS.text, "left", "top");
+  });
+}
+
+// Photos: a little picture for every photo, and clicking one shows it big.
+function drawMemoryPhotos(inside) {
+  if (state.memoryItem !== null) {
+    drawBigPhoto(inside, PHOTOS[state.memoryItem]);
+    return;
+  }
+  if (PHOTOS.length === 0) {
+    drawEmptyFolderMessage(inside, "No photos together yet...", "but there will be!");
+    return;
+  }
+  PHOTOS.forEach((photo, number) => {
+    const picture = (x, y) => drawPhotoFit(photoImage(photo.file), { left: x - 22, top: y - 18, right: x + 22, bottom: y + 18 });
+    drawIcon({ label: photo.label, picture, onClick: () => openMemoryItem(number) }, ...memorySpot(inside, number));
+  });
+}
+
+// One photo, as big as fits, with its caption under it.
+function drawBigPhoto(inside, photo) {
+  const middle = (inside.left + inside.right) / 2;
+  drawPhotoFit(photoImage(photo.file), { left: inside.left + 12, top: inside.top + 8, right: inside.right - 12, bottom: inside.bottom - 52 });
+  write(photo.caption || photo.label, middle + 30, inside.bottom - 19, FONTS.small, COLORS.text);
+}
+
+// Draws a photo as big as fits in a box (without stretching it), with a white frame.
+function drawPhotoFit(image, box) {
+  const boxWidth = box.right - box.left, boxHeight = box.bottom - box.top;
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(box.left, box.top, boxWidth, boxHeight);
+  if (image.complete && image.naturalWidth) {
+    const scale = Math.min((boxWidth - 6) / image.naturalWidth, (boxHeight - 6) / image.naturalHeight);
+    const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+    ctx.drawImage(image, box.left + (boxWidth - width) / 2, box.top + (boxHeight - height) / 2, width, height);
+  }
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(box.left, box.top, boxWidth, boxHeight);
+}
+
+function openMemoryFolder(key) {
+  playSound("click");
+  state.memoriesFolder = key;
+  state.memoryItem = null;
+}
+
+function openMemoryItem(number) {
+  playSound("click");
+  state.memoryItem = number;
 }
 
 // ====================================================================================
@@ -1853,7 +2908,13 @@ function drawPopup() {
   const firstY = top + 22 + 18 + lineHeight / 2;
   lines.forEach((line, i) => write(line, CENTER_X, firstY + i * lineHeight, FONTS.body, COLORS.text));
 
-  drawButton(CENTER_X, bottom - 22, 70, 26, "OK", COLORS.cream, COLORS.text, closePopup, true);
+  // Most pop-ups just have OK. "Are you sure?" pop-ups have Cancel and a yes button.
+  if (popup.yes) {
+    drawButton(CENTER_X - 50, bottom - 22, 84, 26, "Cancel", COLORS.cream, COLORS.text, closePopup, true);
+    drawButton(CENTER_X + 50, bottom - 22, 84, 26, popup.yes.text, COLORS.acceptFill, COLORS.acceptText, popup.yes.onClick, true);
+  } else {
+    drawButton(CENTER_X, bottom - 22, 70, 26, "OK", COLORS.cream, COLORS.text, closePopup, true);
+  }
 }
 
 function drawCelebration() {
@@ -2149,6 +3210,15 @@ function openWindow(name) {
   playSound("click");
   state.window = name;
   state.game = name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null;
+  // Start fresh: the letter list (not an open letter), and an empty password box.
+  state.openWhen = null;
+  state.noteId = null;
+  state.inboxMessage = null;
+  if (state.guestStatus === "sent" || state.guestStatus === "error") state.guestStatus = "";
+  state.memoriesFolder = null;
+  state.memoryItem = null;
+  state.password = "";
+  state.passwordWrong = false;
 }
 
 // Closing a game goes back to the launcher. Closing anything else goes back to the desktop.
@@ -2156,6 +3226,8 @@ function closeWindow() {
   playSound("click");
   state.window = state.game ? "games" : null;
   state.game = null;
+  // A love note he just read moves off the desktop (into Memories) once it's closed.
+  state.noteId = null;
   // Fully closed: the next window opens at normal size again.
   if (!state.window) state.maximized = false;
 }
