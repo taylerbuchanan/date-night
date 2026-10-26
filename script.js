@@ -329,15 +329,15 @@ function drawSparkles() {
   });
 }
 
-// The start screen: "click MWAHHH to start" and a pink MWAHHH button.
+// The start screen: a pink MWAHHH button, with "click MWAHHH to start" under it.
 // (Nothing else shows yet, so "Psst, Jacob..." gets to type itself out.)
 function drawStartMessage(time) {
-  write("click MWAHHH to start", CENTER_X, 190, FONTS.body, COLORS.text);
+  drawButton(CENTER_X, 200, 160, 44, "MWAHHH", COLORS.acceptFill, COLORS.acceptText, start);
 
-  // The button gently bobs up and down so it looks clickable.
+  // The words gently bob up and down.
   // sin() goes smoothly back and forth between -1 and 1.
-  const bob = Math.sin(time / 300) * 2;
-  drawButton(CENTER_X, 245 + bob, 160, 44, "MWAHHH", COLORS.acceptFill, COLORS.acceptText, start);
+  const bob = Math.sin(time / 300) * 3;
+  write("click MWAHHH to start", CENTER_X, 255 + bob, FONTS.body, COLORS.text);
 }
 
 function drawEnvelope() {
