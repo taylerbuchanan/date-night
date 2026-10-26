@@ -1980,14 +1980,16 @@ const ARROW_CURSOR_PIXELS = [
   ".....OO...",
 ];
 const HEART_CURSOR_PIXELS = [
-  ".OOO.OOO.",
-  "OPPPOPPPO",
-  "OPWPPPPPO",
-  "OPPPPPPPO",
-  ".OPPPPPO.",
-  "..OPPPO..",
-  "...OPO...",
-  "....O....",
+  "..OOO.OOO..",
+  ".OPPPOPPPO.",
+  "OPWWPPPPPPO",
+  "OPWPPPPPPPO",
+  "OPPPPPPPPPO",
+  ".OPPPPPPPO.",
+  "..OPPPPPO..",
+  "...OPPPO...",
+  "....OPO....",
+  ".....O.....",
 ];
 const CURSOR_COLORS = { O: "#45284A", W: "#FFFFFF", P: "#F07A9C" };
 
@@ -2006,7 +2008,7 @@ function makeCursor(rows, size, hotX, hotY, fallback) {
   return `url(${picture.toDataURL()}) ${hotX} ${hotY}, ${fallback}`;
 }
 const ARROW_CURSOR = makeCursor(ARROW_CURSOR_PIXELS, 2, 0, 0, "default");
-const HEART_CURSOR = makeCursor(HEART_CURSOR_PIXELS, 2, 9, 4, "pointer");
+const HEART_CURSOR = makeCursor(HEART_CURSOR_PIXELS, 2, 11, 6, "pointer");
 
 // Picks the cursor (pixel ones on the computer screen), and lifts the envelope when hovered.
 function updateMouse() {
