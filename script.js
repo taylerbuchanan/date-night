@@ -875,7 +875,7 @@ function drawDesktop(time) {
     ...allInvites().filter(invite => !isPast(invite)).map(inviteIcon),
     // Love notes he hasn't read yet (the one he's reading right now stays until he closes it).
     // (Your love notes and "Open when..." letters are for HIM, so they're only on his side.)
-    ...(IS_TAYLER ? [] : LOVE_NOTES.filter(note => !noteIsRead(note) || state.windows.some(win => win.noteId === note.id)).map(note => ({
+    ...(IS_TAYLER ? [] : allLoveNotes().filter(note => !noteIsRead(note) || state.windows.some(win => win.noteId === note.id)).map(note => ({
       label: "love_note", picture: drawNoteIcon, onClick: () => openNote(note), tag: "new",
     }))),
     { label: "Open when...", picture: drawOpenWhenIcon, onClick: () => openWindow("openwhen"),
@@ -886,6 +886,7 @@ function drawDesktop(time) {
     // { label: "Secret", picture: drawSecretIcon, onClick: () => openWindow("secret") },
     { label: "Plan a date", picture: drawPlanIcon, onClick: () => openWindow("plan") },
     { label: "IM", picture: drawIMIcon, onClick: () => openWindow("im"), tag: unreadIMs().length ? "new" : null },
+    { label: "Our house", picture: drawHouseIcon, onClick: () => openWindow("house") },
   ];
   // They go down the left side in columns of 4, like a real desktop.
   // (The 5th icon starts a new column.)
@@ -908,7 +909,8 @@ function inviteIcon(invite) {
     if (needsMyAnswer(invite.remote)) tag = "new";
     else if (invite.remote.status === "accepted") tag = "check";
   } else if (invite.sentByMe) {
-    tag = null;   // one you sent: no NEW tag for you
+    // One you sent: a green check once he's accepted it (no NEW tag for you).
+    tag = state.accepts[invite.id] ? "check" : null;
   } else if (!remembers(`opened:${invite.id}`)) tag = "new";
   else if (remembers(`accepted:${invite.id}`)) tag = "check";
   return { label: invite.label, picture: drawEnvelopeIcon, onClick: () => openInvite(invite), tag };
@@ -1164,7 +1166,7 @@ function taskbarPicture(win) {
   if (win.window.startsWith("game:")) return GAMES[win.window.slice(5)].picture;
   return {
     notes: drawNoteIcon, memories: drawFolderIcon, games: drawArcadeIcon, openwhen: drawOpenWhenIcon,
-    secret: drawSecretIcon, plan: drawPlanIcon, im: drawIMIcon,
+    secret: drawSecretIcon, plan: drawPlanIcon, im: drawIMIcon, house: drawHouseIcon,
   }[win.window] || drawNoteIcon;
 }
 
@@ -1172,12 +1174,13 @@ function taskbarPicture(win) {
 // ("Miss ___" is the other person's name, so it's "Miss Tayler" on his side and
 // "Miss Jacob" on yours. Love notes are only on his side, since they're from you.)
 const START_MENU = [
-  ...(IS_TAYLER ? [] : [{ text: "Love notes", onClick: openLoveNotes }]),
+  { text: "Love notes", onClick: openLoveNotes },
   { text: "Open when...", onClick: () => openWindow("openwhen") },
   { text: "Memories", onClick: () => openWindow("memories") },
   { text: "Arcade", onClick: () => openWindow("games") },
   { text: "Plan a date", onClick: () => openWindow("plan") },
   { text: "IM", onClick: () => openWindow("im") },
+  { text: "Our house", onClick: () => openWindow("house") },
   { text: `Miss ${OTHER}`, onClick: () => showPopup("MESSAGE", `${OTHER} misses you too. Like, a lot.`) },
 ];
 
@@ -1276,12 +1279,12 @@ const WINDOW_HEIGHT = 238;
 const WINDOW_TITLES = {
   notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade",
   openwhen: "Open when...", secret: "Secret",
-  plan: `Plan a date for ${OTHER}`, im: `IM - ${OTHER}`,
+  plan: `Plan a date for ${OTHER}`, im: `IM - ${OTHER}`, house: "Our little house",
 };
 // The shorter names on the taskbar buttons.
 const TASKBAR_NAMES = {
   notes: "love_note", memories: "Memories", games: "Arcade", openwhen: "Open when",
-  secret: "Secret", plan: "Plan a date", im: "IM",
+  secret: "Secret", plan: "Plan a date", im: "IM", house: "House",
 };
 
 // Every open window. The LAST one in the list is on top (the one he's using).
@@ -1296,6 +1299,8 @@ const WINDOW_DEFAULTS = {
   password: "", passwordWrong: false,
   imScroll: Infinity, imMaxScroll: 0,   // the chat starts scrolled to the newest message
   writingLetter: false,                 // is the "Write one" form open in Open when...?
+  writingNote: false,
+  houseTab: "shop", houseScroll: 0, houseMaxScroll: 0,   // the house's shop                   // is the "Write one" love note form open (your side)?
   showSent: false,                      // showing "My letters" (the ones you sent) instead?
   passwordLetter: null,                 // the locked letter whose password box is showing
 };
@@ -1489,6 +1494,7 @@ function drawWindow(time, onTop = true) {
   if (state.window === "secret") drawSecret(inside, time);
   if (state.window === "plan") drawPlan(inside);
   if (state.window === "im") drawIM(inside);
+  if (state.window === "house") drawHouse(inside, time);
   if (state.game) drawGameWindow(time);
 }
 
@@ -2102,6 +2108,7 @@ state.ims = [];           // IM messages: { id, from, text, sentAt }
 state.oldNotes = [];      // his old Notepad notes, shown at the top of the chat
 state.remoteDates = [];   // dates you two have planned for each other (from Firebase)
 state.remoteLetters = []; // "Open when..." letters you two have written each other on the site
+state.remoteNotes = [];   // love notes you've written on the site (from Firebase)
 
 
 // In the preview of his side (on your computer), nothing gets sent as him. Returns true
@@ -2224,6 +2231,19 @@ function startListening() {
 
   listenForGames(failed);
   listenForScores(failed);
+  listenForHouse(failed);
+  listenForAccepts(failed);
+
+  database.collection("notes").orderBy("sentAt").onSnapshot(snapshot => {
+    state.remoteNotes = snapshot.docs.map(doc => ({ id: doc.id, label: doc.data().label, text: doc.data().text }));
+    // His side: a pop-up for a love note he hasn't read yet (once).
+    if (!IS_TAYLER) {
+      state.remoteNotes.filter(note => !noteIsRead(note) && !remembers(`${SIDE}:notenews:${note.id}`)).forEach(note => {
+        remember(`${SIDE}:notenews:${note.id}`);
+        notify("LOVE NOTE", `${YOUR_NAME} left you a new love note! It's on your desktop 💌`);
+      });
+    }
+  }, failed);
 
   database.collection("letters").orderBy("sentAt").onSnapshot(snapshot => {
     state.remoteLetters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -2483,6 +2503,31 @@ async function rescheduleRemoteDate(date, day, time) {
   pingOther(`🕐 ${ME} suggested a new time for your date: ${longDayIn(when, OTHER_TIME_ZONE)}, ${timeIn(when, OTHER_TIME_ZONE)} your time.`);
 }
 
+
+// Accepting an invite written into this file: saved in Firebase ("accepts"), so the
+// person who sent it gets a pop-up and a green check on their copy.
+function acceptWrittenInvite(invite) {
+  if (state.online !== "ok" || state.previewingHisSide) return;
+  database.collection("accepts").doc(invite.id).set({
+    by: ME, acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(problem => console.log("Couldn't save the accept:", problem));
+  pingOther(`🎉 ${ME} accepted your date! It's a date!`);
+}
+
+// Your side: a pop-up (once) when he accepts one of the invites written in this file.
+state.accepts = {};
+function listenForAccepts(failed) {
+  database.collection("accepts").onSnapshot(snapshot => {
+    snapshot.docs.forEach(doc => {
+      state.accepts[doc.id] = doc.data();
+      const seen = `${SIDE}:acceptnews:${doc.id}`;
+      if (doc.data().by === OTHER && !remembers(seen)) {
+        remember(seen);
+        notify("YIPPIE", `${OTHER} accepted your date! 🎉`);
+      }
+    });
+  }, failed);
+}
 
 // Suggesting a new time for an invite written into this file. It becomes a planned date
 // (same words, new time) that the other person sees and can accept or move again.
@@ -2990,6 +3035,72 @@ letterForm.addEventListener("submit", async event => {
   }
 });
 
+// The "Write one" form for a new love note (your side only). It shows up on his desktop
+// as "love_note" with a NEW tag, like the ones written in this file.
+const loveNotePanel = makePanel("lovenote", `
+  <form class="plan">
+    <label>Label (shows under it in Memories) <input name="label" maxlength="20" required></label>
+    <label>Your love note
+      <textarea name="text" maxlength="1500" rows="8" placeholder="Hi Jacob..." required></textarea>
+    </label>
+    <p class="problem"></p>
+    <div class="two">
+      <button type="button" class="cancel">Cancel</button>
+      <button>Send love note</button>
+    </div>
+  </form>`);
+const loveNoteForm = loveNotePanel.querySelector("form");
+
+// Today's date as a label, like "Oct 27, 2026".
+function todayLabel() {
+  return new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: MY_TIME_ZONE });
+}
+
+function closeLoveNoteForm() {
+  const win = state.windows.find(other => other.window === "memories");
+  if (win) win.writingNote = false;
+  loveNoteForm.reset();
+  loveNotePanel.querySelector(".problem").textContent = "";
+}
+
+loveNotePanel.querySelector(".cancel").addEventListener("click", () => {
+  playSound("click");
+  closeLoveNoteForm();
+});
+
+loveNoteForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const label = loveNoteForm.elements.label.value.trim() || todayLabel();
+  const text = loveNoteForm.elements.text.value.trim();
+  const problem = loveNotePanel.querySelector(".problem");
+  if (!text) {
+    problem.textContent = "Write something first!";
+    return;
+  }
+  if (blockedInPreview()) return;
+  problem.textContent = "Sending...";
+  try {
+    await database.collection("notes").add({
+      label, text, from: ME, sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    pingOther(`💌 ${ME} left you a new love note on the little computer!`);
+    playSound("win", 0.5);
+    closeLoveNoteForm();
+    showPopup("SENT", `Your love note is on ${OTHER}'s desktop now! 💌`);
+  } catch (trouble) {
+    console.log("Couldn't send the love note:", trouble);
+    problem.textContent = "Couldn't send. Try again?";
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+
+// Fill in today's date as the label whenever the form opens empty.
+setInterval(() => {
+  if (!loveNoteForm.elements.label.value && loveNotePanel.style.display === "block") {
+    loveNoteForm.elements.label.value = todayLabel();
+  }
+}, 300);
+
 // The password box for a locked letter.
 const letterPassPanel = makePanel("letterpass", `
   <form class="reschedule">
@@ -3135,7 +3246,8 @@ function drawNotes(inside, time) {
   ctx.strokeRect(page.left, page.top, page.right - page.left, page.bottom - page.top);
 
   // The note itself, wrapped to fit.
-  const note = LOVE_NOTES.find(note => note.id === state.noteId) || LOVE_NOTES[LOVE_NOTES.length - 1];
+  const notes = allLoveNotes();
+  const note = notes.find(note => note.id === state.noteId) || notes[notes.length - 1];
   const lines = wrapWords(note.text, FONTS.note, page.right - page.left - 20);
   const lineHeight = 19;
   lines.forEach((line, number) => {
@@ -3154,7 +3266,7 @@ function drawNotes(inside, time) {
 
 // The Memories folder has three folders inside it: Invitations, Love notes, and Photos.
 const MEMORY_FOLDERS = {
-  invites: { label: "Invitations", picture: (x, y) => { drawEmptyFolder(x, y); drawSmallEnvelope(x, y + 3, false); } },
+  invites: { label: "Dates", picture: (x, y) => { drawEmptyFolder(x, y); drawSmallEnvelope(x, y + 3, false); } },
   notes: { label: "Love notes", picture: (x, y) => { drawEmptyFolder(x, y); drawPixels(HEART, x - 7, y - 4, 2, COLORS.heart); } },
   photos: { label: "Photos", picture: (x, y) => { drawEmptyFolder(x, y); drawMiniPhoto(x, y + 2); } },
 };
@@ -3243,10 +3355,17 @@ function noteIsRead(note) {
   return remembers(`note:${note.id}`);
 }
 
-// The love notes he's already read, newest first.
+// Every love note: the ones written in this file (LOVE_NOTES), plus ones you've written on
+// the site (with "Write one" in Memories > Love notes), oldest first.
+function allLoveNotes() {
+  return [...LOVE_NOTES, ...state.remoteNotes];
+}
+
+// The love notes in Memories, newest first. His side: the ones he's read.
+// Your side: every one you've sent him.
 function readNotes() {
-  if (IS_TAYLER) return [];   // your love notes are for him, so they're only on his side
-  return LOVE_NOTES.filter(noteIsRead).reverse();
+  if (IS_TAYLER) return allLoveNotes().reverse();
+  return allLoveNotes().filter(noteIsRead).reverse();
 }
 
 // Opens a love note from the desktop, and remembers he's read it.
@@ -3270,8 +3389,21 @@ function drawMemoryNotes(inside) {
     drawOldNote(inside, notes[state.memoryItem]);
     return;
   }
+  // Your side: writing a new love note (a real text box on top), and the button for it.
+  if (IS_TAYLER) {
+    if (state.writingNote) {
+      if (state.online === "ok") requestPanel("lovenote", inside);
+      else drawOnlineProblem(inside, `send ${OTHER} a love note`);
+      return;
+    }
+    drawButton(inside.right - 64, inside.bottom - 19, 110, 26, "Write one", COLORS.acceptFill, COLORS.acceptText, () => {
+      playSound("click");
+      state.writingNote = true;
+    });
+  }
   if (notes.length === 0) {
-    drawEmptyFolderMessage(inside, "Love notes you've read", "will be saved here");
+    if (IS_TAYLER) drawEmptyFolderMessage(inside, "Love notes you send", `${OTHER} will show up here`);
+    else drawEmptyFolderMessage(inside, "Love notes you've read", "will be saved here");
     return;
   }
   notes.forEach((note, number) => {
@@ -3711,7 +3843,10 @@ function endGame(game, title, line, score) {
     saveNumber(`best:${game.key}`, score);
     shareBest(game.key, score);
   }
-  game.result = { title, line, best: beatIt ? score : old, newBest: beatIt && old !== null };
+  // Coins for the house, for playing.
+  const coins = state.online === "ok" && !state.previewingHisSide ? coinsForGame(game.key, score) : 0;
+  addCoins(coins);
+  game.result = { title, line, best: beatIt ? score : old, newBest: beatIt && old !== null, coins };
 }
 
 // The pause screen: the game fades behind a little "Paused" box with a Resume button.
@@ -3780,6 +3915,10 @@ function drawGameWindow(time) {
     write(game.result.line, middle, area.top + 106, FONTS.note, COLORS.text);
     if (game.result.newBest) write("New best score!", middle, area.top + 124, FONTS.small, COLORS.newTag);
     drawBestScores(game.key, middle, area.top + 142);
+    if (game.result.coins) {
+      drawSpriteScaled(COIN, COIN_COLORS, middle - 70, area.top + 194, 2);
+      write(`+${game.result.coins} coins for your house!`, middle - 54, area.top + 200, FONTS.small, COLORS.text, "left");
+    }
   } else {
     write(info.title, middle, area.top + 76, FONTS.celebrationSubtitle, COLORS.text);
     write(info.intro, middle, area.top + 106, FONTS.note, COLORS.text);
@@ -4317,6 +4456,821 @@ function stepBreakout(game, area, seconds) {
 }
 
 
+// ====================================================================================
+// OUR LITTLE HOUSE: a room you decorate together
+// ====================================================================================
+//
+// The house is saved in Firebase ("house"), so you both see the same room. Furniture is
+// bought with coins, and coins are earned by playing games in the Arcade.
+//
+// - Drag furniture to move it. Click it (without dragging) to flip it around.
+// - Drag it onto the shop on the right to put it away in "Mine".
+// - Wallpaper and floors are in the shop too.
+
+// How many coins the house starts with, so you can buy something right away.
+const STARTING_COINS = 100;
+
+// The room is a grid: 8 tiles across, 4 rows of floor, and a wall 2.5 tiles tall.
+const HOUSE_COLUMNS = 8;
+const HOUSE_ROWS = 4;
+const HOUSE_WALL = 2.5;
+const HOUSE_SIDEBAR = 118;   // how wide the shop is
+
+// The colors the furniture pictures use (each letter is one color).
+const FURNITURE_COLORS = {
+  O: "#45284A", W: "#FFFFFF", C: "#FFF4EA", P: "#F8A5BE", p: "#E07A9A", B: "#BBE1FD", b: "#7FB8F0",
+  L: "#C9B6F2", l: "#9D86D6", G: "#7CC27A", g: "#5E9E5A", Y: "#FFE08A", y: "#F2B33D",
+  T: "#E3B07A", t: "#B07A52", K: "#3A3440", k: "#8C8A99", R: "#E05A6B",
+};
+
+// Every kind of furniture. Each tile of the room is 8 pixels of a picture.
+//   w, d   - how many tiles wide, and how many floor rows deep, it takes up
+//   wall   - it hangs on the wall instead of sitting on the floor (wallY = how far down the wall)
+//   price  - 0 means it can't be bought (you two and the cats)
+const FURNITURE = {
+  bed: { name: "Bed", price: 80, w: 2, d: 2, rows: [
+    ".OOOOOOOOOOOOOO.",
+    "OttttttttttttttO",
+    "OtOOOOOOOOOOOOtO",
+    "OtOWWWWWOWWWWWtO",
+    "OtOWWWWWOWWWWWtO",
+    "OtOOOOOOOOOOOOtO",
+    "OtOPPPPPPPPPPOtO",
+    "OtOPpPPPPPPpPOtO",
+    "OtOPPPPPPPPPPOtO",
+    "OtOPPPPpPPPPPOtO",
+    "OtOPPPPPPPPPPOtO",
+    "OtOPpPPPPPPpPOtO",
+    "OtOOOOOOOOOOOOtO",
+    "OttttttttttttttO",
+    "OOOOOOOOOOOOOOOO",
+    ".O............O.",
+  ] },
+  couch: { name: "Couch", price: 70, w: 3, d: 1, rows: [
+    "..OOOOOOOOOOOOOOOOOOOO..",
+    ".OllllllllllllllllllllO.",
+    ".OllllllllllllllllllllO.",
+    "OOOOOOOOOOOOOOOOOOOOOOOO",
+    "OlOLLLLLLLLOOLLLLLLLLOlO",
+    "OlOLLLLLLLLOOLLLLLLLLOlO",
+    "OlOOOOOOOOOOOOOOOOOOOOlO",
+    "OllllllllllllllllllllllO",
+    "OOOOOOOOOOOOOOOOOOOOOOOO",
+    ".O....................O.",
+  ] },
+  table: { name: "Table", price: 40, w: 2, d: 1, rows: [
+    "...OO.......O...",
+    "..OWWO.....OPO..",
+    "..OWWO.....OPO..",
+    "OOOOOOOOOOOOOOOO",
+    "OTTTTTTTTTTTTTTO",
+    "OOOOOOOOOOOOOOOO",
+    ".Ot..........tO.",
+    ".Ot..........tO.",
+    ".OO..........OO.",
+  ] },
+  desk: { name: "Computer desk", price: 70, w: 2, d: 1, rows: [
+    "..OOOOOO........",
+    "..OBBBBO........",
+    "..OBbBBO........",
+    "..OOOOOO....OO..",
+    "....OO.....OYYO.",
+    "OOOOOOOOOOOOOOOO",
+    "OTTTTTTTTTTTTTTO",
+    "OOOOOOOOOOOOOOOO",
+    ".Ot..........tO.",
+    ".Ot..........tO.",
+    ".OO..........OO.",
+  ] },
+  tv: { name: "TV", price: 90, w: 2, d: 1, rows: [
+    "....O......O....",
+    ".....O....O.....",
+    "OOOOOOOOOOOOOOOO",
+    "OKKKKKKKKKKKKKKO",
+    "OKbbbbbbbbbbbbKO",
+    "OKbBBbbbbbbbbbKO",
+    "OKbbbbbbpPbbbbKO",
+    "OKbbbbbbPPbbbbKO",
+    "OKbbbbbbbbbbbbKO",
+    "OKKKKKKKKKKKKKKO",
+    "OOOOOOOOOOOOOOOO",
+    "OttttttttttttttO",
+    "OOOOOOOOOOOOOOOO",
+    ".O............O.",
+  ] },
+  bookshelf: { name: "Bookshelf", price: 60, w: 2, d: 1, rows: [
+    "OOOOOOOOOOOOOOOO",
+    "OttttttttttttttO",
+    "OtPbYlRbPYGlbRtO",
+    "OtPbYlRbPYGlbRtO",
+    "OtPbYlRbPYGlbRtO",
+    "OttttttttttttttO",
+    "OtGlbPRYbPlYGbtO",
+    "OtGlbPRYbPlYGbtO",
+    "OtGlbPRYbPlYGbtO",
+    "OttttttttttttttO",
+    "OtYRbPlGYbPRlGtO",
+    "OtYRbPlGYbPRlGtO",
+    "OtYRbPlGYbPRlGtO",
+    "OttttttttttttttO",
+    "OOOOOOOOOOOOOOOO",
+  ] },
+  lamp: { name: "Lamp", price: 25, w: 1, d: 1, rows: [
+    "..OOOO..",
+    ".OYYYYO.",
+    ".OYYYYO.",
+    "OYYYYYYO",
+    "OOOOOOOO",
+    "...OO...",
+    "...OO...",
+    "...OO...",
+    "...OO...",
+    "...OO...",
+    "..OOOO..",
+    ".OkkkkO.",
+    ".OOOOOO.",
+  ] },
+  plant: { name: "Plant", price: 20, w: 1, d: 1, rows: [
+    "..G..G..",
+    ".GgG.Gg.",
+    "GgGGGgGG",
+    ".GGgGGg.",
+    "..GGgG..",
+    "...gG...",
+    ".OOOOOO.",
+    ".OppppO.",
+    ".OPPPPO.",
+    "..OPPO..",
+    "..OOOO..",
+  ] },
+  beanbag: { name: "Beanbag", price: 25, w: 1, d: 1, rows: [
+    "..OOOO..",
+    ".ObbbbO.",
+    "ObBbbbbO",
+    "ObbbbbbO",
+    "ObbbbbbO",
+    ".OOOOOO.",
+  ] },
+  catbed: { name: "Cat bed", price: 20, w: 1, d: 1, rows: [
+    ".OOOOOO.",
+    "OPPPPPPO",
+    "OPWWWWPO",
+    "OPPPPPPO",
+    ".OOOOOO.",
+  ] },
+  rug: { name: "Rug", price: 35, w: 3, d: 2, rug: true },
+  window: { name: "Window", price: 50, w: 2, wall: true, wallY: 0.45, rows: [
+    "OOOOOOOOOOOOOOOO",
+    "OBBBBBBOOBBBBBBO",
+    "OBWBBBBOOBBWBBBO",
+    "OBBBBBBOOBBBBBBO",
+    "OBBBBBBOOBBBBBBO",
+    "OOOOOOOOOOOOOOOO",
+    "OBBBBBBOOBBBBBBO",
+    "OBBBBBBOOBBBBBBO",
+    "OBBBBBBOOBBBBBBO",
+    "OOOOOOOOOOOOOOOO",
+    "OttttttttttttttO",
+    "OOOOOOOOOOOOOOOO",
+  ] },
+  poster: { name: "Heart poster", price: 15, w: 1, wall: true, wallY: 0.5, rows: [
+    "OOOOOOOO",
+    "OCCCCCCO",
+    "OCPPCPPO",
+    "OCPPPPPO",
+    "OCCPPPCO",
+    "OCCCPCCO",
+    "OCCCCCCO",
+    "OOOOOOOO",
+  ] },
+  clock: { name: "Clock", price: 20, w: 1, wall: true, wallY: 0.45, rows: [
+    "..OOOO..",
+    ".OWWWWO.",
+    "OWWOWWWO",
+    "OWWOWWWO",
+    "OWWOOOWO",
+    "OWWWWWWO",
+    ".OWWWWO.",
+    "..OOOO..",
+  ] },
+  lights: { name: "Fairy lights", price: 30, w: 3, wall: true, wallY: 0.12, rows: [
+    "OO....OO....OO....OO....",
+    "..OOOO..OOOO..OOOO..OOOO",
+    "...Y.....P.....b.....G..",
+    "...Y.....P.....b.....G..",
+  ] },
+  // You two and the cats (free, and already in the house).
+  // (scale shrinks them a bit, so they're the right size next to the furniture.)
+  tayler: { name: YOUR_NAME, price: 0, w: 1, d: 1, person: "tayler", scale: 0.7 },
+  jacob: { name: RECIPIENT_NAME, price: 0, w: 1, d: 1, person: "jacob", scale: 0.7 },
+  orangecat: { name: "Orange cat", price: 0, w: 1, d: 1, cat: 0, scale: 0.5 },
+  blackcat: { name: "Black cat", price: 0, w: 1, d: 1, cat: 1, scale: 0.5 },
+};
+
+const WALLPAPERS = {
+  pink: { name: "Pink stripes", price: 0, colors: ["#F8D9E2", "#F4C6D3"], pattern: "stripes" },
+  blue: { name: "Sky blue", price: 30, colors: ["#D6ECFE", "#C2E1FB"], pattern: "stripes" },
+  lavender: { name: "Lavender", price: 30, colors: ["#E6DDF7", "#D9CDF2"], pattern: "stripes" },
+  cream: { name: "Cream checks", price: 30, colors: ["#FFF4EA", "#F5E4D3"], pattern: "checks" },
+  hearts: { name: "Hearts", price: 45, colors: ["#FDE7EE", "#F4A6BD"], pattern: "hearts" },
+};
+const FLOORS = {
+  wood: { name: "Wood floor", price: 0, colors: ["#E3B07A", "#C9925C"], pattern: "planks" },
+  pinktile: { name: "Pink tiles", price: 40, colors: ["#F8D9E2", "#F0C0CF"], pattern: "checks" },
+  carpet: { name: "Blue carpet", price: 40, colors: ["#B9D4F2", "#A3C4EC"], pattern: "dots" },
+};
+
+// The pixel coin, for prices and the coin count.
+const COIN = [
+  ".OOOO.",
+  "OYYYYO",
+  "OYWYYO",
+  "OYYYYO",
+  "OYYYYO",
+  ".OOOO.",
+];
+const COIN_COLORS = { O: "#B07A1E", Y: "#FFD45E", W: "#FFFFFF" };
+
+// What a brand new house has in it.
+const START_ITEMS = [
+  { id: "tayler", type: "tayler", gx: 2, gy: 2, flip: false, placed: true },
+  { id: "jacob", type: "jacob", gx: 3, gy: 2, flip: true, placed: true },
+  { id: "orangecat", type: "orangecat", gx: 5, gy: 3, flip: false, placed: true },
+  { id: "blackcat", type: "blackcat", gx: 6, gy: 3, flip: true, placed: true },
+];
+
+state.house = null;     // the house, from Firebase
+let houseLayout = null; // where the room and shop were drawn (for dragging)
+let houseDrag = null;   // the piece of furniture being dragged
+
+
+// ---------- Saving and loading ----------
+
+function houseRef() {
+  return database.collection("house").doc("main");
+}
+
+function listenForHouse(failed) {
+  houseRef().onSnapshot(doc => {
+    const data = doc.exists ? doc.data() : {};
+    // While something is being dragged, don't let an update yank it away.
+    if (houseDrag) return;
+    state.house = {
+      coins: data.coins || 0,
+      items: data.items || START_ITEMS,
+      wallpaper: data.wallpaper || "pink",
+      floor: data.floor || "wood",
+      owned: data.owned || ["pink", "wood"],
+    };
+    if (!data.items) setUpHouse();
+  }, failed);
+}
+
+// The very first time: put the starting stuff (and coins) in the house.
+let settingUpHouse = false;
+function setUpHouse() {
+  if (settingUpHouse || state.previewingHisSide) return;
+  settingUpHouse = true;
+  database.runTransaction(async transaction => {
+    const doc = await transaction.get(houseRef());
+    const data = doc.exists ? doc.data() : {};
+    if (data.items) return;
+    transaction.set(houseRef(), {
+      coins: (data.coins || 0) + STARTING_COINS,
+      items: START_ITEMS, wallpaper: "pink", floor: "wood", owned: ["pink", "wood"],
+      lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }).catch(problem => console.log("Couldn't set up the house:", problem));
+}
+
+// Saves changes to the house (and shows them right away).
+function saveHouse(changes) {
+  if (blockedInPreview()) return false;
+  Object.assign(state.house, changes);
+  houseRef().update({ ...changes, lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    .catch(problem => {
+      console.log("Couldn't save the house:", problem);
+      playSound("buzzer", BUZZER_VOLUME);
+    });
+  return true;
+}
+
+// Adds coins to the house (from playing games). Everyone shares the same coins.
+function addCoins(amount) {
+  if (!amount || state.online !== "ok" || state.previewingHisSide) return;
+  houseRef().set({ coins: firebase.firestore.FieldValue.increment(amount) }, { merge: true })
+    .catch(problem => console.log("Couldn't add coins:", problem));
+}
+
+
+// ---------- Where things go ----------
+
+// The spots a piece of furniture takes up (floor rows), for checking if things overlap.
+function footprint(item, gx = item.gx, gy = item.gy) {
+  const kind = FURNITURE[item.type];
+  return { left: gx, right: gx + kind.w, top: kind.wall ? 0 : gy, bottom: kind.wall ? 1 : gy + kind.d };
+}
+
+// Can this go here without bumping into something? (Rugs only bump into other rugs,
+// and wall things only bump into other wall things.)
+function spotIsFree(item, gx, gy, items = state.house.items) {
+  const kind = FURNITURE[item.type];
+  if (gx < 0 || gx + kind.w > HOUSE_COLUMNS) return false;
+  if (!kind.wall && (gy < 0 || gy + kind.d > HOUSE_ROWS)) return false;
+  const mine = footprint(item, gx, gy);
+  return !items.some(other => {
+    if (other.id === item.id || !other.placed) return false;
+    const otherKind = FURNITURE[other.type];
+    if (!!otherKind.wall !== !!kind.wall || !!otherKind.rug !== !!kind.rug) return false;
+    const theirs = footprint(other);
+    return mine.left < theirs.right && theirs.left < mine.right && mine.top < theirs.bottom && theirs.top < mine.bottom;
+  });
+}
+
+// The first free spot for a piece of furniture (or null if the room is full).
+function findFreeSpot(item, items) {
+  for (let gy = 0; gy < HOUSE_ROWS; gy++) {
+    for (let gx = 0; gx < HOUSE_COLUMNS; gx++) {
+      if (spotIsFree(item, gx, gy, items)) return { gx, gy };
+    }
+  }
+  return null;
+}
+
+
+// ---------- Drawing ----------
+
+// Draws a picture with each square rounded to whole screen pixels (so there are no
+// thin gaps between squares when it's scaled to an odd size).
+function drawSpriteScaled(rows, colors, x, y, px) {
+  rows.forEach((row, rowNumber) => {
+    const top = Math.round(y + rowNumber * px), bottom = Math.round(y + (rowNumber + 1) * px);
+    [...row].forEach((letter, column) => {
+      if (!colors[letter]) return;
+      const left = Math.round(x + column * px), right = Math.round(x + (column + 1) * px);
+      ctx.fillStyle = colors[letter];
+      ctx.fillRect(left, top, right - left, bottom - top);
+    });
+  });
+}
+
+// The picture for a piece of furniture: { rows, colors, outline (for cats) }.
+function furniturePicture(type, flip) {
+  const kind = FURNITURE[type];
+  let rows, colors = FURNITURE_COLORS, outline = null;
+  if (kind.person) {
+    rows = [...(kind.person === "jacob" ? JACOB_TOP : TAYLER_TOP), ...LEGS_STAND];
+    colors = kind.person === "jacob" ? JACOB_COLORS : TAYLER_COLORS;
+  } else if (kind.cat !== undefined) {
+    rows = CAT_SIT;
+    colors = CATS[kind.cat].colors;
+    outline = CATS[kind.cat].outline;
+  } else {
+    rows = kind.rows;
+  }
+  return { rows: flip ? mirror(rows) : rows, colors, outline };
+}
+
+// Draws one piece of furniture with its top-left corner at (x, y).
+function drawFurniture(type, x, y, px, flip) {
+  const { rows, colors, outline } = furniturePicture(type, flip);
+  if (outline) {
+    const outlineColors = Object.fromEntries(Object.keys(colors).map(letter => [letter, outline]));
+    [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => drawSpriteScaled(rows, outlineColors, x + dx * px, y + dy * px, px));
+  }
+  drawSpriteScaled(rows, colors, x, y, px);
+}
+
+// A rug: a soft pink rounded rectangle with a white stitched edge.
+function drawRug(left, top, width, height) {
+  steppedBox(left + 2, top + 2, left + width - 2, top + height - 2, 4, "#F8BFCB", COLORS.text, 2);
+  ctx.strokeStyle = COLORS.white;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.strokeRect(left + 7, top + 7, width - 14, height - 14);
+  ctx.setLineDash([]);
+}
+
+// Fills a box with a wallpaper or floor pattern.
+function fillPattern(look, x, y, width, height, unit) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+  ctx.fillStyle = look.colors[0];
+  ctx.fillRect(x, y, width, height);
+  ctx.fillStyle = look.colors[1];
+  if (look.pattern === "stripes") {
+    for (let stripe = x; stripe < x + width; stripe += unit) ctx.fillRect(stripe, y, unit / 2, height);
+  } else if (look.pattern === "checks") {
+    for (let row = 0; row * unit < height; row++) {
+      for (let column = 0; column * unit < width; column++) {
+        if ((row + column) % 2) ctx.fillRect(x + column * unit, y + row * unit, unit, unit);
+      }
+    }
+  } else if (look.pattern === "planks") {
+    const plank = unit * 0.75;
+    for (let row = 0; row * plank < height; row++) {
+      ctx.fillRect(x, y + row * plank, width, 1.5);
+      const offset = (row % 2) * unit;
+      for (let seam = x + offset; seam < x + width; seam += unit * 2) ctx.fillRect(seam, y + row * plank, 1.5, plank);
+    }
+  } else if (look.pattern === "dots") {
+    for (let row = 0; row * unit < height; row++) {
+      for (let column = 0; column * unit < width; column++) {
+        ctx.fillRect(x + column * unit + unit / 2 - 1.5, y + row * unit + unit / 2 - 1.5, 3, 3);
+      }
+    }
+  } else if (look.pattern === "hearts") {
+    for (let row = 0; row * unit < height; row++) {
+      for (let column = 0; column * unit < width; column++) {
+        drawPixels(HEART, x + column * unit + (row % 2) * unit / 2 + 4, y + row * unit + 4, 1, look.colors[1]);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// Where a piece of furniture is drawn: { left, top, width, height } on the screen.
+function furnitureBox(item, layout, gx = item.gx, gy = item.gy) {
+  const kind = FURNITURE[item.type];
+  const { left, wallTop, wallHeight, floorTop, tile, tileHeight, px } = layout;
+  if (kind.rug) {
+    return { left: left + gx * tile, top: floorTop + gy * tileHeight, width: kind.w * tile, height: kind.d * tileHeight };
+  }
+  const { rows } = furniturePicture(item.type, false);
+  const scaled = px * (kind.scale || 1);
+  const width = rows[0].length * scaled, height = rows.length * scaled;
+  const x = left + gx * tile + (kind.w * tile - width) / 2;
+  if (kind.wall) return { left: x, top: wallTop + wallHeight * kind.wallY - height / 2, width, height };
+  return { left: x, top: floorTop + (gy + kind.d) * tileHeight - height, width, height };
+}
+
+// The whole house window: the room on the left, the shop on the right.
+function drawHouse(inside, time) {
+  if (state.online !== "ok") {
+    drawOnlineProblem(inside, "decorate your house");
+    return;
+  }
+  if (!state.house) {
+    write("Loading your house...", (inside.left + inside.right) / 2, inside.top + 100, FONTS.body, COLORS.text);
+    return;
+  }
+  const house = state.house;
+
+  // Work out the room's size: as big as fits next to the shop.
+  const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - HOUSE_SIDEBAR - 8, bottom: inside.bottom - 6 };
+  const tile = Math.floor(Math.min((space.right - space.left) / HOUSE_COLUMNS,
+                                   (space.bottom - space.top) / (HOUSE_WALL + HOUSE_ROWS * 0.75)));
+  const tileHeight = tile * 0.75;
+  const roomWidth = tile * HOUSE_COLUMNS;
+  const left = space.left + Math.floor((space.right - space.left - roomWidth) / 2);
+  const wallTop = space.top, wallHeight = tile * HOUSE_WALL;
+  const floorTop = wallTop + wallHeight, floorHeight = tileHeight * HOUSE_ROWS;
+  const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
+  const layout = houseLayout = { left, wallTop, wallHeight, floorTop, tile, tileHeight, px: tile / 8, roomWidth, floorHeight, sidebar };
+
+  // The wall and floor.
+  fillPattern(WALLPAPERS[house.wallpaper] || WALLPAPERS.pink, left, wallTop, roomWidth, wallHeight, tile / 2);
+  fillPattern(FLOORS[house.floor] || FLOORS.wood, left, floorTop, roomWidth, floorHeight, tile);
+  ctx.fillStyle = "#B07A52";                                  // the baseboard
+  ctx.fillRect(left, floorTop - 3, roomWidth, 4);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(left, wallTop, roomWidth, wallHeight + floorHeight);
+
+  // While dragging, a faint grid on the floor shows where things can go.
+  if (houseDrag && houseDrag.moved) {
+    ctx.strokeStyle = "rgba(69, 40, 74, 0.15)";
+    ctx.lineWidth = 1;
+    for (let column = 1; column < HOUSE_COLUMNS; column++) {
+      ctx.beginPath();
+      ctx.moveTo(left + column * tile, floorTop);
+      ctx.lineTo(left + column * tile, floorTop + floorHeight);
+      ctx.stroke();
+    }
+    for (let row = 1; row < HOUSE_ROWS; row++) {
+      ctx.beginPath();
+      ctx.moveTo(left, floorTop + row * tileHeight);
+      ctx.lineTo(left + roomWidth, floorTop + row * tileHeight);
+      ctx.stroke();
+    }
+  }
+
+  // The furniture: rugs first, then wall things, then the rest from back to front.
+  const placed = house.items.filter(item => item.placed && FURNITURE[item.type]);
+  const order = item => {
+    const kind = FURNITURE[item.type];
+    if (kind.rug) return -100 + item.gy;
+    if (kind.wall) return -50;
+    return item.gy + kind.d + item.gx / 100;
+  };
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, wallTop, roomWidth, wallHeight + floorHeight);
+  ctx.clip();
+  placed.slice().sort((a, b) => order(a) - order(b)).forEach(item => {
+    const dragging = houseDrag && houseDrag.item.id === item.id && houseDrag.moved;
+    if (dragging) return;   // drawn last, on top (below)
+    const box = furnitureBox(item, layout);
+    if (FURNITURE[item.type].rug) drawRug(box.left, box.top, box.width, box.height);
+    else drawFurniture(item.type, box.left, box.top, layout.px * (FURNITURE[item.type].scale || 1), item.flip);
+    hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
+                    houseItem: item, onClick: () => {} });
+  });
+
+  // The piece being dragged, where it would land (with a red outline if it doesn't fit).
+  if (houseDrag && houseDrag.moved) {
+    const { item, gx, gy } = houseDrag;
+    const box = furnitureBox(item, layout, gx, gy);
+    ctx.globalAlpha = 0.75;
+    if (FURNITURE[item.type].rug) drawRug(box.left, box.top, box.width, box.height);
+    else drawFurniture(item.type, box.left, box.top, layout.px * (FURNITURE[item.type].scale || 1), item.flip);
+    ctx.globalAlpha = 1;
+    if (!houseDrag.overShop && !spotIsFree(item, gx, gy)) {
+      ctx.strokeStyle = COLORS.newTag;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(box.left, box.top, box.width, box.height);
+    }
+  }
+  ctx.restore();
+
+  drawHouseShop(house, sidebar);
+}
+
+// The shop on the right: coins, two tabs (Shop and Mine), and cards for each thing.
+let houseCardNames = {};
+function drawHouseShop(house, sidebar) {
+  houseCardNames = {};
+  const middle = (sidebar.left + sidebar.right) / 2;
+  const highlight = houseDrag && houseDrag.moved && houseDrag.overShop;
+  steppedBox(sidebar.left, sidebar.top, sidebar.right, sidebar.bottom, 3,
+             highlight ? COLORS.titleBar : COLORS.cream, COLORS.text, 2);
+
+  // How many coins you have together.
+  drawSpriteScaled(COIN, COIN_COLORS, sidebar.left + 10, sidebar.top + 8, 2);
+  write(`${house.coins} coins`, sidebar.left + 26, sidebar.top + 14, FONTS.small, COLORS.text, "left");
+
+  // The tabs.
+  ["shop", "mine"].forEach((tab, number) => {
+    const tabLeft = sidebar.left + 6 + number * ((sidebar.right - sidebar.left - 12) / 2);
+    const box = { left: tabLeft, top: sidebar.top + 26, right: tabLeft + (sidebar.right - sidebar.left - 12) / 2 - 2,
+                  bottom: sidebar.top + 44, onClick: () => { playSound("click"); state.houseTab = tab; state.houseScroll = 0; } };
+    hitBoxes.push(box);
+    steppedBox(box.left, box.top, box.right, box.bottom, 2,
+               state.houseTab === tab ? COLORS.acceptFill : COLORS.white, COLORS.text, 1.5);
+    write(tab === "shop" ? "Shop" : "Mine", (box.left + box.right) / 2, box.top + 9.5, FONTS.tag,
+          state.houseTab === tab ? COLORS.white : COLORS.text);
+  });
+
+  if (highlight) {
+    write("Drop here to", middle, sidebar.top + 110, FONTS.small, COLORS.text);
+    write("put it away", middle, sidebar.top + 126, FONTS.small, COLORS.text);
+    return;
+  }
+
+  // The cards: everything you can buy, or everything you have put away.
+  const cards = state.houseTab === "shop" ? shopCards(house) : mineCards(house);
+  const list = { left: sidebar.left + 4, top: sidebar.top + 48, right: sidebar.right - 4, bottom: sidebar.bottom - 20 };
+  const cardWidth = (list.right - list.left - 6) / 2, cardHeight = 46;
+  const contentHeight = Math.ceil(cards.length / 2) * (cardHeight + 4);
+  state.houseMaxScroll = Math.max(0, contentHeight - (list.bottom - list.top));
+  state.houseScroll = keepBetween(state.houseScroll || 0, 0, state.houseMaxScroll);
+
+  if (cards.length === 0) {
+    write(state.houseTab === "shop" ? "You bought it all!" : "Nothing put away", middle, list.top + 30, FONTS.tag, COLORS.text);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(list.left, list.top, list.right - list.left, list.bottom - list.top);
+  ctx.clip();
+  cards.forEach((card, number) => {
+    const x = list.left + 2 + (number % 2) * (cardWidth + 2);
+    const y = list.top + 2 + Math.floor(number / 2) * (cardHeight + 4) - state.houseScroll;
+    if (y + cardHeight < list.top || y > list.bottom) return;
+    const id = `house:card:${number}`;
+    houseCardNames[id] = card.label;
+    if (y >= list.top - 2 && y + cardHeight <= list.bottom + 2) {
+      hitBoxes.push({ left: x, top: y, right: x + cardWidth, bottom: y + cardHeight, id, onClick: card.onClick });
+    }
+    steppedBox(x, y, x + cardWidth, y + cardHeight, 2,
+               card.current ? COLORS.iconHover : (state.hoverId === id ? COLORS.titleBar : COLORS.white), COLORS.text, 1.5);
+    card.picture(x + cardWidth / 2, y + 18, cardWidth - 10, 26);
+    if (card.price) {
+      drawSpriteScaled(COIN, COIN_COLORS, x + cardWidth / 2 - 14, y + cardHeight - 11, 1.2);
+      write(String(card.price), x + cardWidth / 2 - 5, y + cardHeight - 7, FONTS.tag,
+            house.coins >= card.price ? COLORS.text : COLORS.newTag, "left");
+    }
+  });
+  ctx.restore();
+
+  // The name of whatever card the mouse is on, along the bottom.
+  const hovered = houseCardNames[state.hoverId];
+  write(hovered || (state.houseTab === "shop" ? "Click to buy" : "Click to use"), middle, sidebar.bottom - 10, FONTS.tag, COLORS.text);
+}
+
+// A small picture of a piece of furniture (or a wallpaper or floor), fit inside a box.
+function cardPicture(type) {
+  return (x, y, maxWidth, maxHeight) => {
+    if (FURNITURE[type].rug) {
+      drawRug(x - 18, y - 9, 36, 18);
+      return;
+    }
+    const { rows } = furniturePicture(type, false);
+    const px = Math.min(maxWidth / rows[0].length, maxHeight / rows.length, 2);
+    drawFurniture(type, x - (rows[0].length * px) / 2, y - (rows.length * px) / 2, px, false);
+  };
+}
+
+function lookPicture(look) {
+  return (x, y) => {
+    fillPattern(look, x - 17, y - 11, 34, 22, 8);
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x - 17, y - 11, 34, 22);
+  };
+}
+
+function shopCards(house) {
+  const furniture = Object.entries(FURNITURE).filter(([, kind]) => kind.price > 0).map(([type, kind]) => ({
+    label: kind.name, price: kind.price, picture: cardPicture(type), onClick: () => buyFurniture(type),
+  }));
+  const walls = Object.entries(WALLPAPERS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
+    label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("wallpaper", key),
+  }));
+  const floors = Object.entries(FLOORS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
+    label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("floor", key),
+  }));
+  return [...furniture, ...walls, ...floors];
+}
+
+function mineCards(house) {
+  const stored = house.items.filter(item => !item.placed && FURNITURE[item.type]).map(item => ({
+    label: FURNITURE[item.type].name, picture: cardPicture(item.type), onClick: () => placeStored(item),
+  }));
+  const looks = [
+    ...Object.entries(WALLPAPERS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
+      label: look.name, picture: lookPicture(look), current: house.wallpaper === key,
+      onClick: () => { playSound("click"); saveHouse({ wallpaper: key }); },
+    })),
+    ...Object.entries(FLOORS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
+      label: look.name, picture: lookPicture(look), current: house.floor === key,
+      onClick: () => { playSound("click"); saveHouse({ floor: key }); },
+    })),
+  ];
+  return [...stored, ...looks];
+}
+
+
+// ---------- Buying and placing ----------
+
+const notEnoughCoins = () => showPopup("NOT ENOUGH COINS", "Play games in the Arcade to earn more coins for your house!");
+
+async function buyFurniture(type) {
+  const kind = FURNITURE[type];
+  if (state.house.coins < kind.price) { notEnoughCoins(); return; }
+  if (blockedInPreview()) return;
+  playSound("coin", 0.6);
+  try {
+    await database.runTransaction(async transaction => {
+      const doc = await transaction.get(houseRef());
+      const data = doc.data();
+      if (data.coins < kind.price) throw new Error("coins");
+      const item = { id: `${type}-${Date.now().toString(36)}`, type, gx: 0, gy: 0, flip: false, placed: false };
+      const spot = findFreeSpot(item, data.items);
+      if (spot) Object.assign(item, spot, { placed: true });
+      transaction.update(houseRef(), {
+        coins: data.coins - kind.price, items: [...data.items, item],
+        lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      if (!spot) setTimeout(() => showPopup("NO ROOM", `Your ${kind.name.toLowerCase()} is in "Mine". Make some room, then click it there!`), 300);
+    });
+  } catch (problem) {
+    if (problem.message === "coins") notEnoughCoins();
+    else console.log("Couldn't buy it:", problem);
+  }
+}
+
+async function buyLook(which, key) {
+  const look = (which === "wallpaper" ? WALLPAPERS : FLOORS)[key];
+  if (state.house.coins < look.price) { notEnoughCoins(); return; }
+  if (blockedInPreview()) return;
+  playSound("coin", 0.6);
+  try {
+    await database.runTransaction(async transaction => {
+      const doc = await transaction.get(houseRef());
+      const data = doc.data();
+      if (data.coins < look.price) throw new Error("coins");
+      transaction.update(houseRef(), {
+        coins: data.coins - look.price, owned: [...new Set([...(data.owned || []), key])], [which]: key,
+        lastBy: ME, updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+  } catch (problem) {
+    if (problem.message === "coins") notEnoughCoins();
+    else console.log("Couldn't buy it:", problem);
+  }
+}
+
+// Takes something out of "Mine" and puts it in the first free spot.
+function placeStored(item) {
+  const spot = findFreeSpot(item, state.house.items);
+  if (!spot) {
+    showPopup("NO ROOM", "There's no room for that! Move or put away something first.");
+    return;
+  }
+  playSound("click");
+  saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...spot, placed: true } : other)) });
+}
+
+
+// ---------- Dragging furniture around ----------
+
+// The mouse went down on a piece of furniture.
+function startHouseDrag(item) {
+  const layout = houseLayout;
+  const kind = FURNITURE[item.type];
+  houseDrag = {
+    item, gx: item.gx, gy: item.gy, moved: false, overShop: false,
+    startX: state.mouse.x, startY: state.mouse.y,
+    // Where on the piece he grabbed it (in tiles), so it doesn't jump to the mouse.
+    grabX: (state.mouse.x - layout.left) / layout.tile - item.gx,
+    grabY: kind.wall ? 0 : (state.mouse.y - layout.floorTop) / layout.tileHeight - item.gy,
+  };
+}
+
+// The mouse moved while dragging: work out which spot it's over.
+function moveHouseDrag() {
+  const drag = houseDrag, layout = houseLayout;
+  if (Math.abs(state.mouse.x - drag.startX) > 4 || Math.abs(state.mouse.y - drag.startY) > 4) drag.moved = true;
+  const kind = FURNITURE[drag.item.type];
+  drag.gx = keepBetween(Math.round((state.mouse.x - layout.left) / layout.tile - drag.grabX), 0, HOUSE_COLUMNS - kind.w);
+  drag.gy = kind.wall ? 0 : keepBetween(Math.round((state.mouse.y - layout.floorTop) / layout.tileHeight - drag.grabY), 0, HOUSE_ROWS - kind.d);
+  const shop = layout.sidebar;
+  drag.overShop = state.mouse.x >= shop.left && state.mouse.x <= shop.right && state.mouse.y >= shop.top && state.mouse.y <= shop.bottom;
+}
+
+// The mouse came up: drop it (or flip it, if it was just a click).
+function endHouseDrag() {
+  const drag = houseDrag;
+  houseDrag = null;
+  const items = state.house.items;
+  if (!drag.moved) {
+    playSound("click");
+    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, flip: !other.flip } : other)) });
+  } else if (drag.overShop) {
+    playSound("paper", 0.6);
+    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, placed: false } : other)) });
+  } else if (spotIsFree(drag.item, drag.gx, drag.gy)) {
+    playSound("flip", 0.5);
+    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, gx: drag.gx, gy: drag.gy } : other)) });
+  } else {
+    playSound("buzzer", BUZZER_VOLUME * 0.6);
+  }
+}
+
+
+// ---------- Coins for playing games ----------
+
+// How many coins each game gives, from its score.
+const GAME_COINS = {
+  run: miles => Math.round(miles / 250),
+  catch: hearts => hearts,
+  fly: clouds => clouds * 2,
+  match: moves => 24 - moves,
+  higher: streak => streak * 2,
+  breakout: hearts => Math.round(hearts / 2),
+  whack: points => Math.round(points / 2),
+};
+
+// Always at least 1 coin for playing, and at most 25 per game.
+function coinsForGame(key, score) {
+  const coins = GAME_COINS[key] ? GAME_COINS[key](score) : 1;
+  return keepBetween(Math.round(coins), 1, 25);
+}
+
+
+// ---------- The icon ----------
+
+const HOUSE_ICON = [
+  ".....OO.....",
+  "....OppO....",
+  "...OppppO...",
+  "..OppppppO..",
+  ".OppppppppO.",
+  "OOOOOOOOOOOO",
+  ".OCCCCCCCCO.",
+  ".OCBBCCOOCO.",
+  ".OCBBCCOtCO.",
+  ".OCCCCCOtCO.",
+  ".OOOOOOOOOO.",
+];
+
+function drawHouseIcon(x, y) {
+  drawSprite(HOUSE_ICON, FURNITURE_COLORS, x - 18, y - 18, 3);
+}
+
+
 // ---------- Boop the cats (whack-a-mole) ----------
 //
 // The orange cat is +1 and stays up a while. The black cat is +3 but super fast.
@@ -4525,7 +5479,12 @@ async function playTurn(kind, spot) {
       board, turn: OTHER, winner, starter: match.starter, lastMoveBy: ME,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
-    if (winner === ME) shareWin(kind);
+    if (winner === ME) {
+      shareWin(kind);
+      addCoins(10);
+    } else if (winner === "draw") {
+      addCoins(5);
+    }
     // (No Discord ping for each move. The pop-up on the site still shows when it's your turn.)
   } catch (problem) {
     console.log("Couldn't save the move:", problem);
@@ -4644,6 +5603,8 @@ async function newQuiz() {
 // He picked an answer for this question. After the 5th, his answers are saved.
 async function pickQuizAnswer(game, name) {
   playSound("click");
+  // If the other person already answered, finishing the quiz earns coins for the house.
+  const bothDone = state.quiz && state.quiz[`answers${OTHER}`];
   game.picks = [...(game.picks || []), name];
   if (game.picks.length < 5) return;
   if (blockedInPreview()) { game.picks = []; return; }
@@ -4653,6 +5614,7 @@ async function pickQuizAnswer(game, name) {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     playSound("win", 0.5);
+    if (bothDone) addCoins(10);
   } catch (problem) {
     console.log("Couldn't save the answers:", problem);
     game.picks = [];
@@ -5084,22 +6046,19 @@ function drawLetter() {
     y += lines.length * lineHeight + 3;
   });
 
-  // A planned date that's already accepted, or waiting on the other person: no buttons, just a note.
-  // One of the invites written in this file, seen from YOUR side: you sent it, so no buttons.
-  if (invite.sentByMe) {
-    write(`You sent this to ${OTHER}!`, CENTER_X, 322, FONTS.celebrationSubtitle, COLORS.text);
-    ctx.globalAlpha = 1;
-    return;
-  }
+  // An invite YOU sent: you see exactly what the other person sees (buttons and all),
+  // but it's just a preview, so nothing gets sent.
   const date = invite.remote;
-  if (date && !needsMyAnswer(date)) {
+  if (isMyOwnInvite(invite)) {
+    write(`Preview of what ${OTHER} sees`, CENTER_X, 290, FONTS.small, COLORS.newTag);
+  } else if (date && !needsMyAnswer(date)) {
+    // A date from them that's already accepted, or waiting on them: no buttons, just a note.
     const note = date.status === "accepted" ? "It's a date!"
                                             : `Waiting for ${OTHER} to answer...`;
     write(note, CENTER_X, 322, FONTS.celebrationSubtitle, COLORS.text);
     ctx.globalAlpha = 1;
     return;
-  }
-  if (date && date.proposedBy) {
+  } else if (date && date.proposedBy) {
     write(`${date.proposedBy} suggested this new time!`, CENTER_X, 290, FONTS.small, COLORS.newTag);
   }
 
@@ -5546,11 +6505,21 @@ function scrollableList() {
   if (state.window === "games" && state.launcherMaxScroll) {
     return { key: "launcherScroll", max: state.launcherMaxScroll };
   }
+  if (state.window === "house" && state.houseMaxScroll) {
+    return { key: "houseScroll", max: state.houseMaxScroll };
+  }
   if (state.window === "im" && state.imMaxScroll) {
     return { key: "imScroll", max: state.imMaxScroll };
   }
   return null;
 }
+
+// The mouse wheel scrolls the house's shop.
+canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
+  if (state.window !== "house" || !state.houseMaxScroll) return;
+  event.preventDefault();
+  state.houseScroll = keepBetween(state.houseScroll + event.deltaY * 0.5, 0, state.houseMaxScroll);
+}), { passive: false });
 
 // The mouse wheel scrolls the IM chat (whichever window the mouse is over).
 canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
@@ -5562,6 +6531,12 @@ canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
 canvas.addEventListener("pointermove", event => {
   state.mouse = toDrawing(event);
   stillHere();
+
+  // Dragging furniture.
+  if (houseDrag) {
+    moveHouseDrag();
+    return;
+  }
 
   // Dragging a window: it follows the mouse, but can't go fully off the screen
   // (the title bar always stays where he can grab it).
@@ -5590,6 +6565,13 @@ canvas.addEventListener("pointerdown", event => {
 
   // Grabbing a window's title bar starts dragging it.
   const box = state.screensaver || state.popup ? null : boxUnderMouse();
+  // Grabbing a piece of furniture in the house starts dragging it.
+  if (box && box.houseItem) {
+    state.startMenu = false;
+    if (box.win) focusWindow(box.win);
+    startHouseDrag(box.houseItem);
+    return;
+  }
   if (box && box.dragWin) {
     state.startMenu = false;
     focusWindow(box.dragWin);
@@ -5608,6 +6590,11 @@ canvas.addEventListener("pointerdown", event => {
 });
 
 canvas.addEventListener("pointerup", event => {
+  if (houseDrag) {
+    state.mouse = toDrawing(event);
+    endHouseDrag();
+    return;
+  }
   if (dragging) {
     dragging = null;
     return;
@@ -5620,7 +6607,7 @@ canvas.addEventListener("pointerup", event => {
     handleClick();
   }
 });
-canvas.addEventListener("pointercancel", () => { touch = null; dragging = null; });
+canvas.addEventListener("pointercancel", () => { touch = null; dragging = null; houseDrag = null; });
 
 // Opens or closes the Start menu.
 function toggleStartMenu() {
@@ -5660,7 +6647,7 @@ function openWindow(name) {
     window: name,
     game: name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null,
     // "Open when..." and the Arcade start full screen (he can shrink them with the button).
-    maximized: name === "openwhen" || name === "games",
+    maximized: name === "openwhen" || name === "games" || name === "house",
     x: 200 + step * 20,
     y: 64 + step * 10,
     minimized: false,
@@ -5722,6 +6709,11 @@ function openInvite(invite) {
 // "Suggest a new time": for a planned date, a real calendar to pick from. For the
 // invites written into this file, the old pop-up ("message me on Discord").
 function suggestOrReschedule() {
+  // Your own invite (a preview): nothing to reschedule.
+  if (state.invite && isMyOwnInvite(state.invite)) {
+    showPopup("PREVIEW", `When ${OTHER} clicks this, they can pick a new day and time.`);
+    return;
+  }
   // (The calendar box needs the big invite, so it goes back to full size.)
   if (state.invite && state.invite.remote) {
     state.inviteSmall = false;
@@ -5835,6 +6827,14 @@ async function unfoldLetter() {
   animate(875, amount => { state.letter.alpha = amount; });
 }
 
+// Is this an invite YOU sent (one written in this file, seen from your side, or a planned
+// date you sent that's not waiting on your answer)? Then playing it is just a preview.
+function isMyOwnInvite(invite) {
+  if (!invite) return false;
+  if (invite.preview || invite.sentByMe) return true;
+  return !!invite.remote && invite.remote.from === ME && !needsMyAnswer(invite.remote);
+}
+
 // 4a. He clicked Decline: buzzer and a joke pop-up.
 function decline() {
   playSound("click");
@@ -5859,9 +6859,14 @@ function closePopup() {
 function accept() {
   playSound("click");
   playSound("chime", CHIME_VOLUME);
-  remember(`accepted:${state.invite.id}`);
-  // A planned date: tell Firebase (and ping the other person on Discord).
-  if (state.invite.remote) acceptRemoteDate(state.invite.remote);
+  // (Your own invite is just a preview: the confetti plays, but nothing is saved or sent.)
+  if (!isMyOwnInvite(state.invite)) {
+    remember(`accepted:${state.invite.id}`);
+    // A planned date: tell Firebase (and ping the other person on Discord).
+    if (state.invite.remote) acceptRemoteDate(state.invite.remote);
+    // An invite written in this file: tell Firebase too, so the sender gets a pop-up.
+    else acceptWrittenInvite(state.invite);
+  }
   state.letter = null;
   state.paper = null;
   state.celebration = { alpha: 0 };
