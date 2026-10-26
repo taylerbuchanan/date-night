@@ -2079,7 +2079,7 @@ const FIREBASE_CONFIG = {
 // Discord pings. One goes to your private server (pings YOU), one to a channel he can
 // see (pings HIM). Leave his as "" until you've made it.
 const DISCORD_TO_TAYLER = DISCORD_WEBHOOK;
-const DISCORD_TO_JACOB = "";
+const DISCORD_TO_JACOB = "https://discord.com/api/webhooks/1564361552344260861/m5CLlM-WBAYAzHhjAuhJbipLZdbpfWBBR9K5GJgDS72WLEeIIum0EPwR0ZNqMrRgbiXy";
 
 // IM pings only happen once per "chat burst": after a ping, it stays quiet this many minutes.
 const IM_PING_QUIET_MINUTES = 10;
