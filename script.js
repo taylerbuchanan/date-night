@@ -907,6 +907,8 @@ function inviteIcon(invite) {
     // A planned date: NEW when it's your turn to answer, a check once it's accepted.
     if (needsMyAnswer(invite.remote)) tag = "new";
     else if (invite.remote.status === "accepted") tag = "check";
+  } else if (invite.sentByMe) {
+    tag = null;   // one you sent: no NEW tag for you
   } else if (!remembers(`opened:${invite.id}`)) tag = "new";
   else if (remembers(`accepted:${invite.id}`)) tag = "check";
   return { label: invite.label, picture: drawEnvelopeIcon, onClick: () => openInvite(invite), tag };
@@ -2220,6 +2222,9 @@ function startListening() {
     checkForNewDates();
   }, failed);
 
+  listenForGames(failed);
+  listenForScores(failed);
+
   database.collection("letters").orderBy("sentAt").onSnapshot(snapshot => {
     state.remoteLetters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     checkForNewLetters();
@@ -2420,10 +2425,11 @@ function withInviteColors(colors, job) {
 //     other person suggested a new time and it's their turn to answer).
 function allInvites() {
   // (A written invite that got a new time is replaced by the new one.)
+  // (On your side, the invites written in this file show too, as ones you sent him.)
   const moved = id => state.remoteDates.some(date => date.rescheduleOf === id);
-  const written = IS_TAYLER ? [] : INVITES.filter(invite => !moved(invite.id));
-  const planned = state.remoteDates.filter(date => date.when &&
-    (date.from === OTHER || needsMyAnswer(date) || (date.rescheduleOf && !IS_TAYLER)));
+  const written = INVITES.filter(invite => !moved(invite.id)).map(invite => (IS_TAYLER ? { ...invite, sentByMe: true } : invite));
+  // Planned dates show for both of you: the person they're for, and the person who sent them.
+  const planned = state.remoteDates.filter(date => date.when);
   return [...written, ...planned.map(remoteInvite)];
 }
 
@@ -3551,6 +3557,34 @@ const GAMES = {
     intro: "Flip the cards to find the pairs.", bestText: n => `${n} moves`, lowerIsBetter: true,
     setup: setupMatch, step: stepMatch,
   },
+  higher: {
+    label: "Higher", title: "Higher or lower", picture: drawHigherIcon,
+    intro: "Guess if the next card is higher or lower!", bestText: n => `${n} in a row`,
+    setup: setupHigher, step: stepHigher,
+  },
+  breakout: {
+    label: "Breakout", title: "Breakout", picture: drawBreakoutIcon,
+    intro: "Move with your mouse. Break all the hearts!", bestText: n => `${n} hearts`,
+    setup: setupBreakout, step: stepBreakout, action: launchBall,
+  },
+  whack: {
+    label: "Boop", title: "Boop the cats!", picture: drawWhackIcon,
+    intro: `Boop the cats (black = 3 points). Don't boop ${OTHER}!`, bestText: n => `${n} points`,
+    setup: setupWhack, step: stepWhack,
+  },
+  // The ones you play TOGETHER (custom = they draw their own window, no Play button).
+  tictactoe: {
+    label: "Tic-tac-toe", title: "Tic-tac-toe", picture: drawTicTacToeIcon,
+    custom: (game, area) => drawTurnGame("tictactoe", game, area), tileText: () => turnGameTileText("tictactoe"),
+  },
+  connect4: {
+    label: "Connect 4", title: "Connect 4", picture: drawConnect4Icon,
+    custom: (game, area) => drawTurnGame("connect4", game, area), tileText: () => turnGameTileText("connect4"),
+  },
+  quiz: {
+    label: "Quiz", title: "Couples quiz", picture: drawQuizIcon,
+    custom: drawQuiz, tileText: quizTileText,
+  },
 };
 
 // The game launcher: a square tile for each game, with its best score.
@@ -3600,7 +3634,8 @@ function drawGamesFolder(area) {
 
     // The best score, small, along the bottom of the tile.
     const best = loadNumber(`best:${key}`);
-    write(best === null ? "best: -" : game.bestText(best), tileMiddle, top + 66, FONTS.tag, COLORS.text);
+    const tileText = game.tileText ? game.tileText() : leaderText(key);
+    write(tileText, tileMiddle, top + 66, FONTS.tag, tileText === "your turn!" ? COLORS.newTag : COLORS.text);
   });
   ctx.restore();
 
@@ -3671,7 +3706,10 @@ function endGame(game, title, line, score) {
   const info = GAMES[game.key];
   const old = loadNumber(`best:${game.key}`);
   const beatIt = old === null || (info.lowerIsBetter ? score < old : score > old);
-  if (beatIt) saveNumber(`best:${game.key}`, score);
+  if (beatIt) {
+    saveNumber(`best:${game.key}`, score);
+    shareBest(game.key, score);
+  }
   game.result = { title, line, best: beatIt ? score : old, newBest: beatIt && old !== null };
 }
 
@@ -3705,6 +3743,12 @@ function drawGameWindow(time) {
   ctx.fillStyle = COLORS.screen;
   ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
 
+  if (info.custom) {
+    info.custom(game, area, time);
+    ctx.restore();
+    return;
+  }
+
   if (game.playing) {
     // How much time passed since the last frame, in seconds. While paused, it's 0, so
     // the game still gets drawn but nothing moves.
@@ -3733,12 +3777,12 @@ function drawGameWindow(time) {
   if (game.over) {
     write(game.result.title, middle, area.top + 76, FONTS.celebrationSubtitle, COLORS.text);
     write(game.result.line, middle, area.top + 106, FONTS.note, COLORS.text);
-    const bestLine = game.result.newBest ? "New best score!" : `Best: ${info.bestText(game.result.best)}`;
-    write(bestLine, middle, area.top + 130, FONTS.small, COLORS.text);
+    if (game.result.newBest) write("New best score!", middle, area.top + 124, FONTS.small, COLORS.newTag);
+    drawBestScores(game.key, middle, area.top + 142);
   } else {
     write(info.title, middle, area.top + 76, FONTS.celebrationSubtitle, COLORS.text);
     write(info.intro, middle, area.top + 106, FONTS.note, COLORS.text);
-    if (best !== null) write(`Best: ${info.bestText(best)}`, middle, area.top + 130, FONTS.small, COLORS.text);
+    drawBestScores(game.key, middle, area.top + 134);
   }
   ctx.restore();
   drawButton(middle, area.top + 168, 140, 32, game.over ? "Play again" : "Play",
@@ -4044,6 +4088,851 @@ function flipCard(game, number) {
   }
 }
 
+
+// ====================================================================================
+// MORE GAMES: Higher or lower, Breakout, and games you play TOGETHER
+// (Tic-tac-toe, Connect 4, and the Couples quiz, which take turns through Firebase)
+// ====================================================================================
+
+// Your color and his color in the games you play together.
+const PLAYER_COLORS = { [YOUR_NAME]: "#F07A9C", [RECIPIENT_NAME]: "#7FB8F0" };
+
+// The questions for the Couples quiz. Each round picks 5 at random.
+// Add as many as you like! (Each one finishes "Who's more likely to...")
+const QUIZ_QUESTIONS = [
+  "fall asleep first on a call?",
+  "start a silly argument?",
+  "cry at a movie?",
+  "forget to text back?",
+  "eat all the snacks?",
+  "say \"I love you\" first?",
+  "get lost somewhere?",
+  "stay up way too late?",
+  "win at video games?",
+  "plan the next date?",
+  "send the most memes?",
+  "apologize first?",
+  "laugh at their own joke?",
+  "get hangry?",
+  "be late?",
+  "talk to the cats like people?",
+  "fall asleep during a movie?",
+  "want to cuddle all day?",
+  "be the big spoon?",
+  "spend all their money on something cute?",
+];
+
+state.matches = {};   // the Tic-tac-toe and Connect 4 games (from Firebase)
+state.quiz = null;    // the Couples quiz (from Firebase)
+
+
+// ---------- Higher or lower ----------
+
+const CARD_NAMES = ["", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+function randomCard() {
+  return 1 + Math.floor(Math.random() * 13);
+}
+
+function setupHigher(game) {
+  Object.assign(game, { current: randomCard(), next: null, streak: 0, reveal: 0, correct: false });
+}
+
+// He guessed: flip the next card, and see if he was right. (The same number counts as right.)
+function guessCard(game, higher) {
+  if (game.reveal > 0 || game.paused) return;
+  game.next = randomCard();
+  game.correct = game.next === game.current || (higher ? game.next > game.current : game.next < game.current);
+  game.reveal = 0.9;
+  if (game.correct) playSound("coin", 0.6);
+  else playSound("buzzer", BUZZER_VOLUME);
+}
+
+// One playing card. faceUp false = the pink back with a heart.
+function drawCard(value, x, y, faceUp) {
+  const width = 60, height = 84;
+  steppedBox(x, y, x + width, y + height, 4, faceUp ? COLORS.white : COLORS.acceptFill, COLORS.text, 2);
+  if (!faceUp) {
+    drawPixels(HEART, x + width / 2 - 10, y + height / 2 - 9, 3, COLORS.titleBar);
+    return;
+  }
+  write(CARD_NAMES[value], x + 8, y + 12, FONTS.menu, COLORS.heart, "left");
+  write(CARD_NAMES[value], x + width / 2, y + height / 2 + 2, FONTS.title, COLORS.heart);
+  drawPixels(HEART, x + width - 18, y + height - 16, 1.5, COLORS.heart);
+}
+
+function stepHigher(game, area, seconds) {
+  const middle = (area.left + area.right) / 2;
+  write(`Streak: ${game.streak}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
+  const cardsTop = area.top + 26;
+  drawCard(game.current, middle - 70, cardsTop, true);
+  drawCard(game.next || 1, middle + 10, cardsTop, !!game.next);
+
+  if (game.reveal > 0) {
+    // Showing the flipped card for a moment, then moving on (or game over).
+    write(game.correct ? "Yes!" : "Nope!", middle, cardsTop + 100, FONTS.body, game.correct ? COLORS.check : COLORS.newTag);
+    game.reveal -= seconds;
+    if (game.reveal <= 0) {
+      if (game.correct) {
+        game.streak += 1;
+        game.current = game.next;
+        game.next = null;
+      } else {
+        playSound("gameover");
+        endGame(game, "Oops!", `Your streak was ${game.streak}.`, game.streak);
+      }
+    }
+    return;
+  }
+  write("Will the next card be...", middle, cardsTop + 100, FONTS.note, COLORS.text);
+  drawButton(middle - 60, cardsTop + 128, 100, 28, "Higher", COLORS.acceptFill, COLORS.acceptText, () => guessCard(game, true));
+  drawButton(middle + 60, cardsTop + 128, 100, 28, "Lower", COLORS.cream, COLORS.text, () => guessCard(game, false));
+}
+
+
+// ---------- Breakout: bounce the ball to break all the hearts ----------
+
+const BREAKOUT_COLORS = ["#F07A9C", "#F8BFCB", "#C9B6F2", "#7FB8F0"];
+const PADDLE_WIDTH = 56;
+
+function setupBreakout(game, area) {
+  Object.assign(game, { lives: 3, score: 0, level: 1, speed: 170, paddleX: (area.left + area.right) / 2 });
+  buildBricks(game, area);
+  resetBall(game, area);
+}
+
+// Rows of heart bricks along the top.
+function buildBricks(game, area) {
+  const width = 32, height = 13, gap = 4;
+  const columns = Math.floor((area.right - area.left - 16 + gap) / (width + gap));
+  const left = (area.left + area.right) / 2 - (columns * (width + gap) - gap) / 2;
+  game.bricks = [];
+  for (let row = 0; row < 4; row++) {
+    for (let column = 0; column < columns; column++) {
+      game.bricks.push({ x: left + column * (width + gap), y: area.top + 36 + row * (height + gap),
+                         w: width, h: height, color: BREAKOUT_COLORS[row], alive: true });
+    }
+  }
+}
+
+// The ball waits on the paddle until he clicks (or presses Space).
+function resetBall(game, area) {
+  game.ball = { x: game.paddleX, y: area.bottom - 22, vx: 0, vy: 0, stuck: true };
+}
+
+function launchBall(game) {
+  const ball = game.ball;
+  if (!ball || !ball.stuck) return;
+  ball.stuck = false;
+  const angle = between(-0.6, 0.6, Math.random());
+  ball.vx = Math.sin(angle) * game.speed;
+  ball.vy = -Math.cos(angle) * game.speed;
+  playSound("jump", 0.6);
+}
+
+function stepBreakout(game, area, seconds) {
+  const paddleY = area.bottom - 14;
+  // The paddle follows the mouse (but stays inside the window).
+  if (!game.paused) game.paddleX = keepBetween(state.mouse.x, area.left + PADDLE_WIDTH / 2 + 2, area.right - PADDLE_WIDTH / 2 - 2);
+  const ball = game.ball;
+
+  if (ball.stuck) {
+    ball.x = game.paddleX;
+    ball.y = paddleY - 8;
+  } else {
+    // Move in small steps, so the ball never skips through a brick.
+    const steps = Math.ceil(seconds * 120) || 1;
+    for (let i = 0; i < steps; i++) {
+      ball.x += ball.vx * seconds / steps;
+      ball.y += ball.vy * seconds / steps;
+      // Walls.
+      if (ball.x < area.left + 4) { ball.x = area.left + 4; ball.vx = Math.abs(ball.vx); }
+      if (ball.x > area.right - 4) { ball.x = area.right - 4; ball.vx = -Math.abs(ball.vx); }
+      if (ball.y < area.top + 22) { ball.y = area.top + 22; ball.vy = Math.abs(ball.vy); }
+      // The paddle: where it hits changes the angle (the edges send it sideways).
+      if (ball.vy > 0 && ball.y >= paddleY - 6 && ball.y <= paddleY + 2 &&
+          Math.abs(ball.x - game.paddleX) <= PADDLE_WIDTH / 2 + 3) {
+        const angle = ((ball.x - game.paddleX) / (PADDLE_WIDTH / 2)) * 1.0;
+        ball.vx = Math.sin(angle) * game.speed;
+        ball.vy = -Math.cos(angle) * game.speed;
+        playKeySound(0.4);
+      }
+      // Bricks.
+      for (const brick of game.bricks) {
+        if (!brick.alive) continue;
+        if (ball.x > brick.x - 3 && ball.x < brick.x + brick.w + 3 && ball.y > brick.y - 3 && ball.y < brick.y + brick.h + 3) {
+          brick.alive = false;
+          game.score += 1;
+          ball.vy = -ball.vy;
+          playSound("coin", 0.4);
+          break;
+        }
+      }
+    }
+    // Missed it!
+    if (ball.y > area.bottom + 6) {
+      game.lives -= 1;
+      if (game.lives <= 0) {
+        playSound("gameover");
+        endGame(game, "Game over!", `You broke ${game.score} hearts.`, game.score);
+        return;
+      }
+      playSound("buzzer", BUZZER_VOLUME);
+      resetBall(game, area);
+    }
+    // All the bricks are gone: a new level, a little faster.
+    if (game.bricks.every(brick => !brick.alive)) {
+      game.level += 1;
+      game.speed += 25;
+      playSound("chime", 0.4);
+      buildBricks(game, area);
+      resetBall(game, area);
+    }
+  }
+
+  // Draw everything.
+  game.bricks.forEach(brick => {
+    if (!brick.alive) return;
+    ctx.fillStyle = brick.color;
+    ctx.fillRect(brick.x, brick.y, brick.w, brick.h);
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(brick.x, brick.y, brick.w, brick.h);
+    drawPixels(HEART, brick.x + brick.w / 2 - 3.5, brick.y + 3.5, 1, COLORS.white);
+  });
+  steppedBox(game.paddleX - PADDLE_WIDTH / 2, paddleY, game.paddleX + PADDLE_WIDTH / 2, paddleY + 8, 2,
+             COLORS.acceptFill, COLORS.text, 1.5);
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(Math.round(ball.x) - 3, Math.round(ball.y) - 3, 6, 6);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(Math.round(ball.x) - 3, Math.round(ball.y) - 3, 6, 6);
+
+  write(`Hearts: ${game.score}   Level ${game.level}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
+  for (let i = 0; i < 3; i++) {
+    drawPixels(HEART, area.right - 22 - i * 18, area.top + 6, 2, i < game.lives ? COLORS.heart : COLORS.lostLife);
+  }
+  if (ball.stuck) write("Click to launch!", (area.left + area.right) / 2, area.bottom - 40, FONTS.small, COLORS.text);
+}
+
+
+// ---------- Boop the cats (whack-a-mole) ----------
+//
+// The orange cat is +1 and stays up a while. The black cat is +3 but super fast.
+// The other person pops up too, and booping THEM ends the game!
+
+const WHACK_SECONDS = 45;
+
+// What can pop up: how often (out of 100), how many points, and how long it stays up.
+const WHACK_KINDS = {
+  orange: { chance: 55, points: 1, seconds: 1.3 },
+  black: { chance: 25, points: 3, seconds: 0.6 },
+  person: { chance: 20, points: 0, seconds: 1.2 },
+};
+
+function setupWhack(game, area) {
+  Object.assign(game, { score: 0, timeLeft: WHACK_SECONDS, clock: 0, nextPop: 0.6, moles: [], pops: [] });
+  // 9 holes in 3 rows, spread to fit the window.
+  const middle = (area.left + area.right) / 2;
+  const rowGap = Math.min(68, (area.bottom - area.top - 50) / 3);
+  const columnGap = Math.min(110, (area.right - area.left - 60) / 3);
+  game.holes = [];
+  for (let row = 0; row < 3; row++) {
+    for (let column = 0; column < 3; column++) {
+      game.holes.push({ x: middle + (column - 1) * columnGap, y: area.top + 48 + (row + 1) * rowGap - 8 });
+    }
+  }
+}
+
+// Boop! Points for a cat, game over for the person.
+function boop(game, mole) {
+  if (mole.hit || game.paused) return;
+  mole.hit = true;
+  mole.hitAt = mole.age;
+  if (mole.kind === "person") {
+    playSound("crash");
+    setTimeout(() => playSound("gameover"), 350);
+    endGame(game, "Oops!", `You booped ${OTHER}! You had ${game.score} points.`, game.score);
+    return;
+  }
+  const points = WHACK_KINDS[mole.kind].points;
+  game.score += points;
+  game.pops.push({ x: game.holes[mole.hole].x, y: game.holes[mole.hole].y - 40, text: `+${points}`, age: 0 });
+  if (sounds.meow) playSound("meow", 0.4);
+  else playSound("coin", 0.5);
+}
+
+function stepWhack(game, area, seconds) {
+  game.clock += seconds;
+  game.timeLeft -= seconds;
+  // It gets faster as the game goes on (down to a bit over half the time).
+  const speed = Math.max(0.55, 1 - game.clock / 90);
+
+  // Pop something new up, in an empty hole.
+  game.nextPop -= seconds;
+  if (game.nextPop <= 0) {
+    const empty = game.holes.map((hole, number) => number).filter(number => !game.moles.some(mole => mole.hole === number));
+    if (empty.length) {
+      const roll = Math.random() * 100;
+      const kind = roll < WHACK_KINDS.orange.chance ? "orange"
+                 : roll < WHACK_KINDS.orange.chance + WHACK_KINDS.black.chance ? "black" : "person";
+      game.moles.push({ hole: empty[Math.floor(Math.random() * empty.length)], kind, age: 0,
+                        life: WHACK_KINDS[kind].seconds * speed, hit: false });
+    }
+    game.nextPop = between(0.35, 0.8, Math.random()) * speed;
+  }
+  game.moles.forEach(mole => { mole.age += seconds; });
+  game.moles = game.moles.filter(mole => (mole.hit ? mole.age < mole.hitAt + 0.25 : mole.age < mole.life));
+
+  // The holes, and whatever is popping out of them.
+  game.holes.forEach((hole, number) => {
+    // A dark hole with a grassy rim.
+    ctx.fillStyle = "#7CC27A";
+    ctx.beginPath();
+    ctx.ellipse(hole.x, hole.y + 2, 32, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#45284A";
+    ctx.beginPath();
+    ctx.ellipse(hole.x, hole.y, 26, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const mole = game.moles.find(other => other.hole === number);
+    if (!mole) return;
+    // Rising up out of the hole, then sinking back down (or ducking fast when booped).
+    const end = mole.hit ? mole.hitAt + 0.25 : mole.life;
+    const rise = Math.max(0, Math.min(1, mole.age / 0.12, (end - mole.age) / 0.12));
+    const height = mole.kind === "person" ? 32 : CAT_HEIGHT;
+    const width = mole.kind === "person" ? 24 : CAT_WIDTH;
+    const left = hole.x - width / 2, top = hole.y - height * rise;
+
+    // Only show the part that's above the hole.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(hole.x - 40, hole.y - 60, 80, 60);
+    ctx.clip();
+    if (mole.kind === "person") {
+      drawPerson(OTHER === YOUR_NAME ? "tayler" : "jacob", LEGS_STAND, Math.round(left), Math.round(top), 2);
+    } else {
+      const cat = CATS.find(info => info.name === mole.kind);
+      const outline = { W: cat.outline, S: cat.outline, E: cat.outline, P: cat.outline };
+      [[-1, 0], [1, 0], [0, -1]].forEach(([dx, dy]) => {
+        drawSprite(CAT_SIT, outline, Math.round(left) + dx * CAT_SIZE, Math.round(top) + dy * CAT_SIZE, CAT_SIZE);
+      });
+      drawSprite(CAT_SIT, cat.colors, Math.round(left), Math.round(top), CAT_SIZE);
+    }
+    // Booped: little stars.
+    if (mole.hit) drawPixels(SPARKLE, hole.x - 10, top - 14, 2, COLORS.white);
+    ctx.restore();
+
+    // The front lip of the hole, so it looks like it's coming out of the ground.
+    ctx.fillStyle = "#7CC27A";
+    ctx.fillRect(hole.x - 30, hole.y + 2, 60, 6);
+
+    if (!mole.hit && rise > 0.5) {
+      hitBoxes.push({ left: hole.x - 26, top: hole.y - height - 4, right: hole.x + 26, bottom: hole.y + 8,
+                      onClick: () => boop(game, mole) });
+    }
+  });
+
+  // "+1" and "+3" floating up.
+  game.pops.forEach(pop => {
+    pop.age += seconds;
+    write(pop.text, pop.x, pop.y - pop.age * 30, FONTS.menu, COLORS.newTag);
+  });
+  game.pops = game.pops.filter(pop => pop.age < 0.7);
+
+  write(`Points: ${game.score}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
+  write(`Time: ${Math.max(0, Math.ceil(game.timeLeft))}`, area.right - 8, area.top + 12, FONTS.small, COLORS.text, "right");
+
+  if (game.timeLeft <= 0) {
+    playSound("win", 0.5);
+    endGame(game, "Time's up!", `You got ${game.score} points!`, game.score);
+  }
+}
+
+// An orange cat peeking out of a hole, for the Arcade tile.
+function drawWhackIcon(x, y) {
+  ctx.fillStyle = "#45284A";
+  ctx.beginPath();
+  ctx.ellipse(x, y + 12, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const cat = CATS[0];
+  drawSprite(CAT_SIT.slice(0, 5), cat.colors, x - 21, y - 4, 2);
+}
+
+
+// ---------- Tic-tac-toe and Connect 4 (you take turns, from your own computers) ----------
+//
+// Each game is saved in Firebase. Your pieces are pink hearts, his are blue.
+// When it's someone's turn, Discord pings them.
+
+const TURN_GAMES = {
+  tictactoe: { title: "Tic-tac-toe", columns: 3, rows: 3, inARow: 3 },
+  connect4: { title: "Connect 4", columns: 7, rows: 6, inARow: 4 },
+};
+
+// Who won? (A name, "draw", or null if the game isn't over.)
+function findWinner(kind, board) {
+  const { columns, rows, inARow } = TURN_GAMES[kind];
+  const at = (column, row) => (column >= 0 && column < columns && row >= 0 && row < rows ? board[row * columns + column] : "");
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      const who = at(column, row);
+      if (!who) continue;
+      // Check right, down, and both diagonals.
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+        let count = 1;
+        while (count < inARow && at(column + dx * count, row + dy * count) === who) count++;
+        if (count === inARow) return who;
+      }
+    }
+  }
+  return board.every(cell => cell) ? "draw" : null;
+}
+
+// Starts a new game. Whoever starts it goes first.
+async function newTurnGame(kind) {
+  if (blockedInPreview()) return;
+  playSound("click");
+  const { columns, rows } = TURN_GAMES[kind];
+  try {
+    await database.collection("matches").doc(kind).set({
+      board: Array(columns * rows).fill(""),
+      turn: ME, winner: null, starter: ME, lastMoveBy: ME,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (problem) {
+    console.log("Couldn't start the game:", problem);
+    showPopup("OOPS", "Couldn't start the game. Try again?");
+  }
+}
+
+// Puts your piece in a spot, and passes the turn to the other person.
+async function playTurn(kind, spot) {
+  const match = state.matches[kind];
+  if (!match || match.winner || match.turn !== ME || match.board[spot] || blockedInPreview()) return;
+  const board = [...match.board];
+  board[spot] = ME;
+  const winner = findWinner(kind, board);
+  playSound(winner === ME ? "win" : "flip", 0.6);
+  // Show it right away (Firebase catches up a moment later).
+  state.matches[kind] = { ...match, board, turn: OTHER, winner, lastMoveBy: ME };
+  try {
+    await database.collection("matches").doc(kind).set({
+      board, turn: OTHER, winner, starter: match.starter, lastMoveBy: ME,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    const title = TURN_GAMES[kind].title;
+    if (winner === ME) {
+      shareWin(kind);
+      pingOther(`🏆 ${ME} won ${title}! Want a rematch?`);
+    }
+    else if (winner === "draw") pingOther(`🤝 ${title} ended in a tie!`);
+    else pingOther(`🎮 ${ME} made a move in ${title}. It's your turn!`);
+  } catch (problem) {
+    console.log("Couldn't save the move:", problem);
+    state.matches[kind] = match;
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+}
+
+// The words at the top: whose turn it is, or who won.
+function turnGameStatus(match) {
+  if (!match) return `Start a game with ${OTHER}!`;
+  if (match.winner === ME) return "You won!";
+  if (match.winner === OTHER) return `${OTHER} won!`;
+  if (match.winner === "draw") return "It's a tie!";
+  return match.turn === ME ? "Your turn!" : `Waiting for ${OTHER}...`;
+}
+
+function drawTurnGame(kind, game, area) {
+  const middle = (area.left + area.right) / 2;
+  if (state.online !== "ok") {
+    drawOnlineProblem(area, `play with ${OTHER}`);
+    return;
+  }
+  const { columns, rows } = TURN_GAMES[kind];
+  const match = state.matches[kind];
+  const board = match ? match.board : Array(columns * rows).fill("");
+  const myTurn = match && !match.winner && match.turn === ME;
+
+  write(turnGameStatus(match), middle, area.top + 12, FONTS.menu, COLORS.text);
+  drawWins(kind, middle, area.top + 28);
+
+  // The board, as big as fits (leaving room for the words and a button).
+  const cell = Math.floor(Math.min((area.right - area.left - 20) / columns, (area.bottom - area.top - 90) / rows, 48));
+  const left = middle - (cell * columns) / 2, top = area.top + 40;
+  ctx.fillStyle = kind === "connect4" ? COLORS.iconHover : COLORS.white;
+  ctx.fillRect(left, top, cell * columns, cell * rows);
+
+  for (let spot = 0; spot < board.length; spot++) {
+    const column = spot % columns, row = Math.floor(spot / columns);
+    const x = left + column * cell, y = top + row * cell;
+    // In Connect 4 you click a COLUMN (the piece drops down). In Tic-tac-toe, a square.
+    const target = kind === "connect4" ? dropSpot(board, column) : spot;
+    const canPlay = myTurn && target !== null && !board[target];
+    if (canPlay) {
+      const id = `${kind}:${column}:${kind === "connect4" ? "" : row}`;
+      hitBoxes.push({ left: x, top: y, right: x + cell, bottom: y + cell, id, onClick: () => playTurn(kind, target) });
+      if (state.hoverId === id) {
+        ctx.fillStyle = COLORS.titleBar;
+        ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+      }
+    }
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, cell, cell);
+    if (kind === "connect4" && !board[spot]) {
+      // An empty hole.
+      ctx.fillStyle = COLORS.white;
+      ctx.beginPath();
+      ctx.arc(x + cell / 2, y + cell / 2, cell * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (board[spot]) {
+      const size = Math.max(1, Math.floor(cell / 10));
+      drawPixels(HEART, x + cell / 2 - 3.5 * size, y + cell / 2 - 3 * size, size, PLAYER_COLORS[board[spot]]);
+    }
+  }
+
+  // Under the board: who's which color, and a "New game" button when it's over.
+  const under = top + cell * rows + 14;
+  if (!match || match.winner) {
+    drawButton(middle, under + 8, 130, 26, match ? "Rematch" : "New game", COLORS.acceptFill, COLORS.acceptText,
+               () => newTurnGame(kind));
+  } else {
+    drawPixels(HEART, middle - 80, under - 3, 1, PLAYER_COLORS[YOUR_NAME]);
+    write(YOUR_NAME, middle - 70, under + 1, FONTS.tag, COLORS.text, "left");
+    drawPixels(HEART, middle + 20, under - 3, 1, PLAYER_COLORS[RECIPIENT_NAME]);
+    write(RECIPIENT_NAME, middle + 30, under + 1, FONTS.tag, COLORS.text, "left");
+  }
+}
+
+// In Connect 4, a piece drops to the lowest empty spot in its column (or null if it's full).
+function dropSpot(board, column) {
+  const { columns, rows } = TURN_GAMES.connect4;
+  for (let row = rows - 1; row >= 0; row--) {
+    if (!board[row * columns + column]) return row * columns + column;
+  }
+  return null;
+}
+
+
+// ---------- The Couples quiz: "Who's more likely to...?" ----------
+//
+// You both answer the same 5 questions on your own computers. Once you've both answered,
+// you see how many you matched.
+
+async function newQuiz() {
+  if (blockedInPreview()) return;
+  playSound("click");
+  // Pick 5 different questions at random.
+  const numbers = QUIZ_QUESTIONS.map((question, number) => number).sort(() => Math.random() - 0.5).slice(0, 5);
+  try {
+    await database.collection("quiz").doc("current").set({
+      round: ((state.quiz && state.quiz.round) || 0) + 1,
+      questions: numbers,
+      [`answers${YOUR_NAME}`]: null,
+      [`answers${RECIPIENT_NAME}`]: null,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (problem) {
+    console.log("Couldn't start the quiz:", problem);
+    showPopup("OOPS", "Couldn't start the quiz. Try again?");
+  }
+}
+
+// He picked an answer for this question. After the 5th, his answers are saved.
+async function pickQuizAnswer(game, name) {
+  playSound("click");
+  game.picks = [...(game.picks || []), name];
+  if (game.picks.length < 5) return;
+  if (blockedInPreview()) { game.picks = []; return; }
+  const theirsDone = state.quiz && state.quiz[`answers${OTHER}`];
+  try {
+    await database.collection("quiz").doc("current").update({
+      [`answers${ME}`]: game.picks,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    playSound("win", 0.5);
+    pingOther(theirsDone ? `💕 ${ME} finished the couples quiz! Come see how you matched!`
+                         : `💕 ${ME} answered the couples quiz. Your turn!`);
+  } catch (problem) {
+    console.log("Couldn't save the answers:", problem);
+    game.picks = [];
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+}
+
+function drawQuiz(game, area) {
+  const middle = (area.left + area.right) / 2;
+  if (state.online !== "ok") {
+    drawOnlineProblem(area, `play with ${OTHER}`);
+    return;
+  }
+  const quiz = state.quiz;
+  const mine = quiz && quiz[`answers${ME}`];
+  const theirs = quiz && quiz[`answers${OTHER}`];
+
+  // No quiz yet.
+  if (!quiz) {
+    write("Couples quiz", middle, area.top + 50, FONTS.celebrationSubtitle, COLORS.text);
+    write("Who's more likely to...? Answer 5 questions,", middle, area.top + 84, FONTS.note, COLORS.text);
+    write("then see how many you matched!", middle, area.top + 102, FONTS.note, COLORS.text);
+    drawButton(middle, area.top + 150, 120, 30, "Start", COLORS.acceptFill, COLORS.acceptText, newQuiz);
+    return;
+  }
+
+  // Answering: one question at a time.
+  if (!mine) {
+    if (game.quizRound !== quiz.round) {
+      game.quizRound = quiz.round;
+      game.picks = [];
+    }
+    const number = (game.picks || []).length;
+    if (number >= 5) {
+      write("Saving...", middle, area.top + 90, FONTS.body, COLORS.text);
+      return;
+    }
+    write(`Question ${number + 1} of 5`, middle, area.top + 18, FONTS.small, COLORS.text);
+    write("Who's more likely to...", middle, area.top + 50, FONTS.body, COLORS.text);
+    wrapWords(QUIZ_QUESTIONS[quiz.questions[number]], FONTS.menu, area.right - area.left - 40).forEach((line, row) => {
+      write(line, middle, area.top + 80 + row * 20, FONTS.menu, COLORS.text);
+    });
+    drawButton(middle - 70, area.top + 150, 120, 30, YOUR_NAME, PLAYER_COLORS[YOUR_NAME], COLORS.white,
+               () => pickQuizAnswer(game, YOUR_NAME));
+    drawButton(middle + 70, area.top + 150, 120, 30, RECIPIENT_NAME, PLAYER_COLORS[RECIPIENT_NAME], COLORS.white,
+               () => pickQuizAnswer(game, RECIPIENT_NAME));
+    return;
+  }
+
+  // Waiting for the other person.
+  if (!theirs) {
+    drawPixels(HEART, middle - 14, area.top + 40, 4, COLORS.heart);
+    write("Your answers are in!", middle, area.top + 90, FONTS.body, COLORS.text);
+    write(`Waiting for ${OTHER} to answer...`, middle, area.top + 116, FONTS.note, COLORS.text);
+    return;
+  }
+
+  // Results! Each question, with a heart in the color of who each of you picked.
+  const matched = quiz.questions.filter((question, number) => mine[number] === theirs[number]).length;
+  write(`You matched ${matched} out of 5!`, middle, area.top + 14, FONTS.menu, COLORS.text);
+  const rowHeight = Math.min(26, (area.bottom - area.top - 70) / 5);
+  quiz.questions.forEach((question, number) => {
+    const y = area.top + 34 + number * rowHeight;
+    const same = mine[number] === theirs[number];
+    let text = QUIZ_QUESTIONS[question];
+    ctx.font = FONTS.tag;
+    const room = area.right - area.left - 110;
+    while (ctx.measureText(text).width > room && text.length > 4) text = text.slice(0, -2);
+    if (text !== QUIZ_QUESTIONS[question]) text = text.trim() + "...";
+    write(text, area.left + 12, y + 6, FONTS.tag, COLORS.text, "left");
+    // Your pick, then his pick (as hearts in that person's color), then a check or an X.
+    const picks = { [YOUR_NAME]: quiz[`answers${YOUR_NAME}`][number], [RECIPIENT_NAME]: quiz[`answers${RECIPIENT_NAME}`][number] };
+    drawPixels(HEART, area.right - 86, y + 1, 1.5, PLAYER_COLORS[picks[YOUR_NAME]]);
+    drawPixels(HEART, area.right - 66, y + 1, 1.5, PLAYER_COLORS[picks[RECIPIENT_NAME]]);
+    if (same) drawPixels(CHECK, area.right - 40, y + 2, 2, COLORS.check);
+    else write("x", area.right - 34, y + 6, FONTS.menu, COLORS.newTag);
+  });
+  write(`${YOUR_NAME}'s pick, ${RECIPIENT_NAME}'s pick`, area.right - 12, area.top + 28, FONTS.tag, COLORS.text, "right");
+  drawButton(middle, area.bottom - 18, 130, 26, "New quiz", COLORS.acceptFill, COLORS.acceptText, newQuiz);
+}
+
+
+// ---------- Listening for moves, and pop-ups when it's your turn ----------
+
+function listenForGames(failed) {
+  database.collection("matches").onSnapshot(snapshot => {
+    snapshot.docs.forEach(doc => { state.matches[doc.id] = doc.data(); });
+    checkForGameNews();
+  }, failed);
+  database.collection("quiz").doc("current").onSnapshot(doc => {
+    state.quiz = doc.exists ? doc.data() : null;
+    checkForGameNews();
+  }, failed);
+}
+
+// A pop-up (once) when the other person makes a move or answers the quiz.
+function checkForGameNews() {
+  Object.entries(state.matches).forEach(([kind, match]) => {
+    if (match.lastMoveBy !== OTHER || !match.updatedAt) return;
+    const seen = `${SIDE}:gamenews:${kind}:${match.updatedAt.seconds}`;
+    if (remembers(seen)) return;
+    remember(seen);
+    const title = TURN_GAMES[kind] ? TURN_GAMES[kind].title : kind;
+    if (match.winner === OTHER) notify("GAME OVER", `${OTHER} won ${title}! Rematch?`);
+    else if (match.winner === "draw") notify("GAME OVER", `${title} ended in a tie!`);
+    else notify("YOUR TURN", `${OTHER} made a move in ${title}! Open the Arcade to play.`);
+  });
+  const quiz = state.quiz;
+  if (quiz && quiz[`answers${OTHER}`] && quiz.updatedAt) {
+    const seen = `${SIDE}:quiznews:${quiz.round}`;
+    if (!remembers(seen)) {
+      remember(seen);
+      notify("COUPLES QUIZ", quiz[`answers${ME}`] ? `${OTHER} finished the quiz! See how you matched in the Arcade.`
+                                                    : `${OTHER} answered the couples quiz! Your turn, in the Arcade.`);
+    }
+  }
+}
+
+// The little words on a game's tile in the Arcade (instead of a best score).
+function turnGameTileText(kind) {
+  const match = state.matches[kind];
+  if (match && !match.winner && match.turn === ME) return "your turn!";
+  return `wins ${winsOf(YOUR_NAME, kind)} - ${winsOf(RECIPIENT_NAME, kind)}`;
+}
+
+// "Wins: Tayler 3  Jacob 2" above a Tic-tac-toe or Connect 4 board.
+function drawWins(kind, middle, y) {
+  const values = { [YOUR_NAME]: winsOf(YOUR_NAME, kind), [RECIPIENT_NAME]: winsOf(RECIPIENT_NAME, kind) };
+  drawScoreLine(values, middle, y + 3, n => `${n} ${n === 1 ? "win" : "wins"}`);
+}
+
+// Both of your best scores in a solo game ("Tayler: 12 hearts  Jacob: 9 hearts").
+function drawBestScores(key, middle, y) {
+  const info = GAMES[key];
+  const values = { [YOUR_NAME]: bestOf(YOUR_NAME, key), [RECIPIENT_NAME]: bestOf(RECIPIENT_NAME, key) };
+  write("best scores", middle, y - 12, FONTS.tag, COLORS.text);
+  drawScoreLine(values, middle, y, n => info.bestText(n));
+}
+
+function quizTileText() {
+  const quiz = state.quiz;
+  if (quiz && !quiz[`answers${ME}`]) return "your turn!";
+  return `with ${OTHER}`;
+}
+
+
+// ---------- Shared scores: both of your best scores, and who has more wins ----------
+//
+// Each of you has a "scores" record in Firebase, like:
+//   { best_run: 4000, best_catch: 12, wins_tictactoe: 3, ... }
+// Best scores are for the solo games, wins are for Tic-tac-toe and Connect 4.
+
+state.scores = {};   // { Tayler: {...}, Jacob: {...} }
+
+function listenForScores(failed) {
+  database.collection("scores").onSnapshot(snapshot => {
+    snapshot.docs.forEach(doc => { state.scores[doc.id] = doc.data(); });
+    uploadOldBests();
+  }, failed);
+}
+
+// Someone's best score in a game (or null). Your own also checks this browser, so it
+// still shows when you're offline.
+function bestOf(name, key) {
+  const online = state.scores[name] && state.scores[name][`best_${key}`];
+  if (name !== ME) return online === undefined ? null : online;
+  const local = loadNumber(`best:${key}`);
+  if (online === undefined || online === null) return local;
+  if (local === null) return online;
+  return GAMES[key].lowerIsBetter ? Math.min(local, online) : Math.max(local, online);
+}
+
+function winsOf(name, kind) {
+  const wins = state.scores[name] && state.scores[name][`wins_${kind}`];
+  return typeof wins === "number" ? wins : 0;
+}
+
+// Saves a new best score to Firebase, so the other person can see it too.
+function shareBest(key, score) {
+  if (state.online !== "ok" || state.previewingHisSide) return;
+  database.collection("scores").doc(ME).set({ [`best_${key}`]: score }, { merge: true })
+    .catch(problem => console.log("Couldn't share the score:", problem));
+}
+
+// Adds one win to your count.
+function shareWin(kind) {
+  if (state.online !== "ok" || state.previewingHisSide) return;
+  database.collection("scores").doc(ME).set({ [`wins_${kind}`]: firebase.firestore.FieldValue.increment(1) }, { merge: true })
+    .catch(problem => console.log("Couldn't share the win:", problem));
+}
+
+// Best scores from before scores were shared (saved only in this browser) get uploaded once.
+let uploadedOldBests = false;
+function uploadOldBests() {
+  if (uploadedOldBests || state.previewingHisSide) return;
+  uploadedOldBests = true;
+  Object.keys(GAMES).forEach(key => {
+    const local = loadNumber(`best:${key}`);
+    const online = state.scores[ME] && state.scores[ME][`best_${key}`];
+    if (local === null) return;
+    const better = online === undefined || online === null ||
+                   (GAMES[key].lowerIsBetter ? local < online : local > online);
+    if (better) shareBest(key, local);
+  });
+}
+
+// "Tayler: 12   Jacob: 9", with a little crown-heart next to whoever's winning.
+function drawScoreLine(values, middle, y, format) {
+  const [mine, his] = [values[YOUR_NAME], values[RECIPIENT_NAME]];
+  const text = name => `${name}: ${values[name] === null ? "-" : format(values[name])}`;
+  write(text(YOUR_NAME), middle - 12, y, FONTS.small, COLORS.text, "right");
+  write(text(RECIPIENT_NAME), middle + 12, y, FONTS.small, COLORS.text, "left");
+  drawPixels(HEART, middle - 3.5, y - 3, 1, COLORS.heart);
+  return mine === his ? null : (mine > his ? YOUR_NAME : RECIPIENT_NAME);
+}
+
+// Who's ahead in a game, for the little words on its Arcade tile (like "Jacob: 12").
+function leaderText(key) {
+  const info = GAMES[key];
+  const scores = [YOUR_NAME, RECIPIENT_NAME].map(name => [name, bestOf(name, key)]).filter(([, value]) => value !== null);
+  if (scores.length === 0) return "best: -";
+  scores.sort((a, b) => (info.lowerIsBetter ? a[1] - b[1] : b[1] - a[1]));
+  return `${scores[0][0]}: ${scores[0][1]}`;
+}
+
+
+// ---------- The icons ----------
+
+function drawTicTacToeIcon(x, y) {
+  ctx.fillStyle = COLORS.text;
+  [-6, 6].forEach(offset => {
+    ctx.fillRect(x + offset - 1, y - 18, 2, 36);
+    ctx.fillRect(x - 18, y + offset - 1, 36, 2);
+  });
+  drawPixels(HEART, x - 18, y - 16, 1.5, PLAYER_COLORS[YOUR_NAME]);
+  drawPixels(HEART, x - 5, y - 4, 1.5, PLAYER_COLORS[RECIPIENT_NAME]);
+  drawPixels(HEART, x + 8, y + 8, 1.5, PLAYER_COLORS[YOUR_NAME]);
+}
+
+function drawConnect4Icon(x, y) {
+  steppedBox(x - 20, y - 15, x + 20, y + 17, 2, "#7FB8F0", COLORS.text, 2);
+  const colors = [COLORS.white, PLAYER_COLORS[YOUR_NAME], COLORS.white, COLORS.white,
+                  PLAYER_COLORS[RECIPIENT_NAME], PLAYER_COLORS[YOUR_NAME], PLAYER_COLORS[RECIPIENT_NAME], PLAYER_COLORS[YOUR_NAME]];
+  colors.forEach((color, number) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x - 12 + (number % 4) * 8, y - 6 + Math.floor(number / 4) * 12, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawQuizIcon(x, y) {
+  drawPixels(HEART, x - 14, y - 12, 4, COLORS.heart);
+  write("?", x, y - 2, FONTS.menu, COLORS.white);
+}
+
+function drawHigherIcon(x, y) {
+  steppedBox(x - 18, y - 16, x + 2, y + 12, 2, COLORS.white, COLORS.text, 2);
+  write("7", x - 8, y - 2, FONTS.menu, COLORS.heart);
+  steppedBox(x - 2, y - 12, x + 18, y + 16, 2, COLORS.acceptFill, COLORS.text, 2);
+  write("?", x + 8, y + 2, FONTS.menu, COLORS.white);
+}
+
+function drawBreakoutIcon(x, y) {
+  BREAKOUT_COLORS.slice(0, 3).forEach((color, row) => {
+    for (let column = 0; column < 3; column++) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 19 + column * 13, y - 16 + row * 7, 11, 5);
+    }
+  });
+  ctx.fillStyle = COLORS.white;
+  ctx.fillRect(x + 1, y + 4, 4, 4);
+  ctx.fillStyle = COLORS.acceptFill;
+  ctx.fillRect(x - 10, y + 13, 22, 4);
+}
+
 function drawSparkles() {
   SPARKLE_SPOTS.forEach(([x, y, size], i) => {
     drawPixels(SPARKLE, x, y, size, state.sparkleDim[i] ? COLORS.sparkleDim : COLORS.sparkle);
@@ -4200,6 +5089,12 @@ function drawLetter() {
   });
 
   // A planned date that's already accepted, or waiting on the other person: no buttons, just a note.
+  // One of the invites written in this file, seen from YOUR side: you sent it, so no buttons.
+  if (invite.sentByMe) {
+    write(`You sent this to ${OTHER}!`, CENTER_X, 322, FONTS.celebrationSubtitle, COLORS.text);
+    ctx.globalAlpha = 1;
+    return;
+  }
   const date = invite.remote;
   if (date && !needsMyAnswer(date)) {
     const note = date.status === "accepted" ? "It's a date!"
