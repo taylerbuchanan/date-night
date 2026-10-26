@@ -131,6 +131,7 @@ const FONTS = {
   suggest: "13px 'Pixelify Sans'",
   celebrationSubtitle: "27px 'Pixelify Sans'",
   iconLabel: "bold 14px 'Pixelify Sans'",
+  iconLabelSmall: "bold 11px 'Pixelify Sans'",
   tag: "bold 10px 'Pixelify Sans'",
   menu: "bold 14px 'Pixelify Sans'",
   note: "15px 'Pixelify Sans'",
@@ -550,10 +551,16 @@ function drawIcon(icon, x, y) {
   icon.picture(x, y);
 
   // The label under it, on a little cream tag so it's easy to read on any wallpaper.
-  ctx.font = FONTS.iconLabel;
+  // Long labels (like "Oct 26, 2026") shrink their text so they stay about as wide as the icon.
+  let labelFont = FONTS.iconLabel;
+  ctx.font = labelFont;
+  if (ctx.measureText(icon.label).width > 80) {
+    labelFont = FONTS.iconLabelSmall;
+    ctx.font = labelFont;
+  }
   const labelWidth = ctx.measureText(icon.label).width + 10;
   steppedBox(x - labelWidth / 2, y + 21, x + labelWidth / 2, y + 39, 2, COLORS.cream, COLORS.text, 1.5);
-  write(icon.label, x, y + 30.5, FONTS.iconLabel, COLORS.text);
+  write(icon.label, x, y + 30.5, labelFont, COLORS.text);
 
   // A pink NEW tag, or a green check.
   if (icon.tag === "new") {
