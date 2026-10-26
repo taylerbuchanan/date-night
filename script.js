@@ -2632,10 +2632,20 @@ function placePanels() {
     const show = request && inRightPlace && !state.popup && !state.startMenu &&
                  !state.powerMenu && !state.screensaver;
     if (show) {
+      const box = request.box;
+      // If the window is dragged partway off the screen, trim the panel at the screen's
+      // edges too (so the typing box doesn't hang over the computer's frame).
+      const trim = {
+        left: Math.max(0, SCREEN.left - box.left),
+        right: Math.max(0, box.right - SCREEN.right),
+        top: Math.max(0, SCREEN.top - box.top),
+        bottom: Math.max(0, box.bottom - TASKBAR.top),
+      };
       Object.assign(panel.style, {
         display: "block",
-        left: `${request.box.left}px`, top: `${request.box.top}px`,
-        width: `${request.box.right - request.box.left}px`, height: `${request.box.bottom - request.box.top}px`,
+        left: `${box.left}px`, top: `${box.top}px`,
+        width: `${box.right - box.left}px`, height: `${box.bottom - box.top}px`,
+        clipPath: `inset(${trim.top}px ${trim.right}px ${trim.bottom}px ${trim.left}px)`,
       });
     } else {
       if (panel.contains(document.activeElement)) document.activeElement.blur();
