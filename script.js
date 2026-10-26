@@ -484,13 +484,76 @@ function drawPixels(pattern, x, y, size, color) {
   });
 }
 
-// Writes words. align: "center" or "left". baseline: "middle" (y is the middle) or "top".
+// Pixel-art versions of emojis. Any of these in the text gets drawn as pixel art instead.
+// O = outline, P = pink, W = white, Y = yellow, B = blue tears, R = red mouth.
+// To add another emoji, copy one of these blocks and draw it with letters.
+const EMOJI_PIXELS = {
+  "💗": {
+    rows: [
+      ".OO...OO.",
+      "OPPO.OPPO",
+      "OPWPOPPPO",
+      "OPPPPPPPO",
+      ".OPPPPPO.",
+      "..OPPPO..",
+      "...OPO...",
+      "....O....",
+    ],
+    colors: { O: "#45284A", P: "#F07A9C", W: "#FFFFFF" },
+  },
+  "😭": {
+    rows: [
+      "..OOOOO..",
+      ".OYYYYYO.",
+      "OYOOYOOYO",
+      "OBYYYYYBO",
+      "OBYOOOYBO",
+      "OBYOROYBO",
+      ".OBYYYBO.",
+      "..OOOOO..",
+    ],
+    colors: { O: "#45284A", Y: "#FFD45E", B: "#7FB8F0", R: "#E05A6B" },
+  },
+};
+const EMOJI_PATTERN = new RegExp(`(${Object.keys(EMOJI_PIXELS).join("|")})`, "u");
+
+// Writes words. align: "center", "left", or "right". baseline: "middle" (y is the middle) or "top".
+// Emojis from EMOJI_PIXELS are drawn as pixel art, right in line with the words.
 function write(text, x, y, font, color, align = "center", baseline = "middle") {
   ctx.font = font;
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
-  ctx.fillText(text, x, y);
+  if (!EMOJI_PATTERN.test(text)) {
+    ctx.fillText(text, x, y);
+    return;
+  }
+
+  // Split the text into words and emojis, and work out how wide it all is.
+  const fontSize = Number(font.match(/(\d+)px/)[1]);
+  const size = Math.max(1, Math.round(fontSize / 8));     // how big each emoji pixel is
+  const pieces = text.split(EMOJI_PATTERN).filter(piece => piece !== "");
+  const widthOf = piece => (EMOJI_PIXELS[piece] ? EMOJI_PIXELS[piece].rows[0].length * size + 2
+                                                : ctx.measureText(piece).width);
+  const total = pieces.reduce((sum, piece) => sum + widthOf(piece), 0);
+  let left = align === "center" ? x - total / 2 : align === "right" ? x - total : x;
+
+  // Draw each piece, left to right.
+  pieces.forEach(piece => {
+    const emoji = EMOJI_PIXELS[piece];
+    if (emoji) {
+      const height = emoji.rows.length * size;
+      const top = baseline === "top" ? y + (fontSize - height) / 2 + 1 : y - height / 2;
+      drawSprite(emoji.rows, emoji.colors, Math.round(left + 1), Math.round(top), size);
+    } else {
+      ctx.font = font;
+      ctx.fillStyle = color;
+      ctx.textAlign = "left";
+      ctx.textBaseline = baseline;
+      ctx.fillText(piece, left, y);
+    }
+    left += widthOf(piece);
+  });
 }
 
 // Splits words into lines that fit within maxWidth pixels.
@@ -3210,6 +3273,10 @@ function openWindow(name) {
   playSound("click");
   state.window = name;
   state.game = name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null;
+  // "Open when..." and the Arcade start full screen (he can shrink them with the button).
+  // Games keep whatever size the Arcade was. Everything else starts normal size.
+  if (name === "openwhen" || name === "games") state.maximized = true;
+  else if (!state.game) state.maximized = false;
   // Start fresh: the letter list (not an open letter), and an empty password box.
   state.openWhen = null;
   state.noteId = null;
