@@ -5153,24 +5153,36 @@ function newSpot(type) {
   return { x: between(0.2, 0.8, Math.random()), y: between(0.45, 0.9, Math.random()) };
 }
 
-// How big a piece of furniture is drawn, in screen pixels.
-function furnitureSize(type, art) {
+// How big a piece of furniture is drawn, in screen pixels (facing that way).
+function furnitureSize(type, art, facing = "front") {
   const picture = FURNITURE_PICTURES[type];
   const kind = FURNITURE[type];
   if (!picture.naturalWidth) {                                     // still loading
     const guess = (kind.width || 60) * art;
     return { width: guess, height: guess };
   }
-  // "width" says how wide it is; otherwise "size" says how much to grow or shrink the picture.
+  // "width" says how wide it is from the front; otherwise "size" says how much to grow or
+  // shrink the picture. The other sides are shrunk the same amount (their pictures are
+  // already the same height as the front one).
   const scale = art * (kind.width ? kind.width / picture.naturalWidth : (kind.size || 1));
-  return { width: picture.naturalWidth * scale, height: picture.naturalHeight * scale };
+  const turned = facingPicture(type, facing);
+  return { width: (turned.naturalWidth || turned.width) * scale, height: (turned.naturalHeight || turned.height) * scale };
 }
+
+// Which way a piece of furniture faces: "front" (toward you), "right", "back", or "left".
+// (For a little while, facing the wall was saved as "turned".)
+function itemFacing(item) {
+  return item.facing || (item.turned ? "back" : "front");
+}
+
+// The order the Turn button goes in.
+const FACINGS = ["front", "right", "back", "left"];
 
 // Keeps a spot inside the room: not hanging off the sides, wall things on the wall, and
 // floor things standing on the floor.
 function clampSpot(item, spot, layout) {
   const kind = FURNITURE[item.type];
-  const { width, height } = furnitureSize(item.type, layout.art);
+  const { width, height } = furnitureSize(item.type, layout.art, itemFacing(item));
   const half = Math.min(0.5, width / 2 / layout.roomWidth);
   const x = keepBetween(spot.x, half, 1 - half);
   if (kind.wall) {
@@ -5185,7 +5197,7 @@ function clampSpot(item, spot, layout) {
 // Where a piece of furniture is drawn: { left, top, width, height } on the screen.
 function furnitureBox(item, layout, spot) {
   const kind = FURNITURE[item.type];
-  const { width, height } = furnitureSize(item.type, layout.art);
+  const { width, height } = furnitureSize(item.type, layout.art, itemFacing(item));
   const middle = layout.left + spot.x * layout.roomWidth;
   if (kind.wall) return { left: middle - width / 2, top: layout.wallTop + spot.y * layout.wallHeight - height / 2, width, height };
   const bottom = layout.floorTop + spot.y * layout.floorHeight;
@@ -5209,21 +5221,27 @@ function drawSpriteScaled(rows, colors, x, y, px) {
   });
 }
 
-// The back of a piece of furniture (for when it's turned to face the wall).
-// If there's a real picture of its back in images/furniture/back/<its name>.png, that's
-// used. If not, one is made from the front picture: the same shape, all in its main color
-// (so a couch's back is a plain couch-colored shape, with no pillows showing).
-const FURNITURE_BACKS = {};
-function backPicture(type) {
-  let back = FURNITURE_BACKS[type];
-  if (!back) {
-    back = FURNITURE_BACKS[type] = { real: new Image(), made: null };
-    back.real.onerror = () => { back.real = null; };          // no picture of its back
-    back.real.src = `images/furniture/back/${type}.png`;
+// The pictures of furniture from the other sides: images/furniture/back/<name>.png,
+// right/<name>.png (facing right), and left/<name>.png (facing left). They load the first
+// time something is turned that way. If there's no picture of its back, one is made from
+// the front picture (the same shape, all in its main color).
+const FURNITURE_VIEWS = { back: {}, right: {}, left: {} };
+const MADE_BACKS = {};
+function facingPicture(type, facing) {
+  if (facing === "front" || !FURNITURE_VIEWS[facing]) return FURNITURE_PICTURES[type];
+  const views = FURNITURE_VIEWS[facing];
+  if (!views[type]) {
+    const picture = views[type] = new Image();
+    picture.onerror = () => { picture.missing = true; };
+    picture.src = `images/furniture/${facing}/${type}.png`;
   }
-  if (back.real && back.real.naturalWidth) return back.real;
-  if (!back.made && FURNITURE_PICTURES[type].naturalWidth) back.made = makeBackPicture(FURNITURE_PICTURES[type]);
-  return back.made;
+  const picture = views[type];
+  if (picture.naturalWidth) return picture;
+  if (picture.missing && facing === "back" && FURNITURE_PICTURES[type].naturalWidth) {
+    MADE_BACKS[type] = MADE_BACKS[type] || makeBackPicture(FURNITURE_PICTURES[type]);
+    return MADE_BACKS[type];
+  }
+  return FURNITURE_PICTURES[type];      // (still loading, or there's no picture that way)
 }
 
 function makeBackPicture(picture) {
@@ -5253,10 +5271,10 @@ function makeBackPicture(picture) {
   return back;
 }
 
-// Draws a furniture picture in a box (flipped means facing the other way, and turned
-// means its back is to you).
-function drawFurniturePicture(type, box, flip, turned) {
-  const picture = (turned && backPicture(type)) || FURNITURE_PICTURES[type];
+// Draws a furniture picture in a box (flipped means mirrored, and facing is which way
+// it's turned: "front", "right", "back", or "left").
+function drawFurniturePicture(type, box, flip, facing = "front") {
+  const picture = facingPicture(type, facing);
   if (!(picture.naturalWidth || picture.width)) return;
   ctx.save();
   // These pictures are big and get shrunk down, so smoothing makes them look neat.
@@ -5516,7 +5534,7 @@ function drawRoomName(room, layout) {
 // One piece of furniture (see-through while it's being dragged), and its click spot.
 function drawHouseItem(item, box, dragging) {
   if (dragging) ctx.globalAlpha = 0.8;
-  drawFurniturePicture(item.type, box, item.flip, item.turned);
+  drawFurniturePicture(item.type, box, item.flip, itemFacing(item));
   ctx.globalAlpha = 1;
   if (!dragging) {
     hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
@@ -5538,9 +5556,14 @@ function drawFurnitureMenu(item, box, layout) {
 
   const change = changes => saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...changes } : other)) });
   const buttons = [{ text: "Flip", onClick: () => { playSound("click"); change({ flip: !item.flip }); } }];
-  // (Wall things and rugs are flat, so they can't turn around.)
+  // Turn: front, then its right side, then its back, then its left side, then the front again.
+  // (Wall things and rugs are flat, so they can't turn.)
   if (!kind.wall && !kind.rug) {
-    buttons.push({ text: item.turned ? "Face out" : "Face wall", onClick: () => { playSound("click"); change({ turned: !item.turned }); } });
+    buttons.push({ text: "Turn", onClick: () => {
+      playSound("click");
+      const next = FACINGS[(FACINGS.indexOf(itemFacing(item)) + 1) % FACINGS.length];
+      change({ facing: next, turned: false });
+    } });
   }
   buttons.push({ text: "Put away", onClick: () => {
     playSound("paper", 0.6);
@@ -5872,7 +5895,7 @@ const FOLK_SPEED = { person: 60, cat: 70 };
 //   line  - how far down the picture you're "cut off" (by the cushion or blanket)
 //   show  - how much of you shows, from the top (0.3 = just your head)
 //   facing - "down" = facing out, "up" = your back to us (at the desk)
-// (When the furniture is turned to face the wall, you face the other way, behind it.)
+// (When the furniture is turned, see seatSpot.)
 const SEATS = {
   couch: { spots: [0.33, 0.67], line: 0.6, show: 0.62, facing: "down" },
   darksofa: { spots: [0.33, 0.67], line: 0.62, show: 0.62, facing: "down" },
@@ -5893,6 +5916,47 @@ const SEATS = {
   gamingdesk: { spots: [0.3, 0.7], line: 0.95, show: 0.75, facing: "up" },
   drawingdesk: { spots: [0.4], line: 0.95, show: 0.75, facing: "up" },
 };
+// Where someone sits on a piece of furniture, the way it's turned right now:
+//   across - 0 to 1 across the picture
+//   facing - which way they face ("down", "up", "left", or "right")
+//   behind - are they behind it? (sitting on a couch that faces the wall)
+// From the side, there's only room for one person (spot 0).
+function seatSpot(item, spot) {
+  const seat = SEATS[item.type], turned = itemFacing(item);
+  const opposite = { down: "up", up: "down", left: "right", right: "left" };
+  let place;
+  if (turned === "front") place = { across: seat.spots[spot], facing: seat.facing, behind: false };
+  else if (turned === "back") place = { across: 1 - seat.spots[spot], facing: opposite[seat.facing], behind: true };
+  else if (seat.facing === "down") {
+    // A couch or chair turned sideways: you sit in the middle, facing the same way it does.
+    place = { across: 0.5, facing: turned, behind: false };
+  } else {
+    // A desk turned sideways: you sit on its front side, facing it.
+    place = { across: turned === "right" ? 0.82 : 0.18, facing: opposite[turned], behind: false };
+  }
+  // Flipped furniture is mirrored, so you are too.
+  if (item.flip) {
+    place.across = 1 - place.across;
+    if (place.facing === "left" || place.facing === "right") place.facing = opposite[place.facing];
+  }
+  return place;
+}
+
+// How many people fit on it the way it's turned.
+function seatCount(item) {
+  const turned = itemFacing(item);
+  return turned === "front" || turned === "back" ? SEATS[item.type].spots.length : 1;
+}
+
+// Where a cat naps on a piece of furniture, 0 to 1 across the picture (the middle, if
+// it's turned sideways).
+function napAcross(item) {
+  const turned = itemFacing(item);
+  let across = turned === "left" || turned === "right" ? 0.5 : NAP_SPOTS[item.type].x;
+  if (turned === "back") across = 1 - across;
+  return item.flip ? 1 - across : across;
+}
+
 // Where the cats nap on things.
 const NAP_SPOTS = {
   bed: { x: 0.6, line: 0.78 },
@@ -6016,9 +6080,9 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     if (isCat) {
       if (NAP_SPOTS[item.type] && !spotTaken(item.id, "nap", folk)) choices.push({ itemId: item.id, spot: "nap", nap: true });
     } else if (SEATS[item.type]) {
-      SEATS[item.type].spots.forEach((_, spot) => {
+      for (let spot = 0; spot < seatCount(item); spot++) {
         if (!spotTaken(item.id, spot, folk)) choices.push({ itemId: item.id, spot });
-      });
+      }
     }
   });
   if (isCat) choices.push("nap");
@@ -6040,8 +6104,8 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     // Walk to the front of that furniture first.
     const box = boxes[choice.itemId];
     const item = placed.find(other => other.id === choice.itemId);
-    const across = choice.nap ? NAP_SPOTS[item.type].x : SEATS[item.type].spots[choice.spot];
-    const x = (box.left + box.width * (item.flip ? 1 - across : across) - layout.left) / layout.roomWidth;
+    const across = choice.nap ? napAcross(item) : seatSpot(item, choice.spot).across;
+    const x = (box.left + box.width * across - layout.left) / layout.roomWidth;
     const y = (box.top + box.height - layout.floorTop) / layout.floorHeight + 0.04;
     folk.goal = choice;
     folk.doing = "walk";
@@ -6055,7 +6119,7 @@ function folkDepth(folk, layout, boxes) {
     const box = boxes[folk.goal.itemId];
     const item = state.house.items.find(other => other.id === folk.goal.itemId);
     // Sitting on something turned to face the wall? Then they're behind it.
-    const behind = item && item.turned && !folk.goal.nap;
+    const behind = item && !folk.goal.nap && SEATS[item.type] && seatSpot(item, folk.goal.spot).behind;
     return box.top + box.height + (behind ? -0.5 : 0.5);
   }
   return layout.floorTop + folk.y * layout.floorHeight;
@@ -6075,18 +6139,16 @@ function drawFolk(folk, layout, boxes, time) {
     const item = state.house.items.find(other => other.id === folk.goal.itemId);
     if (folk.goal.nap) {
       const nap = NAP_SPOTS[item.type];
-      x = box.left + box.width * (item.flip ? 1 - nap.x : nap.x);
+      x = box.left + box.width * napAcross(item);
       bottom = box.top + box.height * nap.line;
       row = CAT_ROWS.lie;
       column = Math.floor(time / 1500) % 2 ? 1 : 2;      // breathing in and out
     } else {
       const seat = SEATS[item.type];
-      const across = seat.spots[folk.goal.spot];
-      x = box.left + box.width * (item.flip ? 1 - across : across);
+      const place = seatSpot(item, folk.goal.spot);
+      x = box.left + box.width * place.across;
       bottom = box.top + box.height * seat.line;
-      // (Turned to face the wall? Then they face the other way too.)
-      const flipped = { down: "up", up: "down" };
-      row = PERSON_ROWS[item.turned ? flipped[seat.facing] : seat.facing];
+      row = PERSON_ROWS[place.facing];
       column = 0;
       show = seat.show;
       if (seat.sleepy) {
