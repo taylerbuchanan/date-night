@@ -4742,31 +4742,30 @@ const HOUSE_ART_SIZE = 1;
 // TO ADD A ROOM: add a line with a new id (one word, never change it later), and add a
 // door to it in HOUSE_DOORS.
 const HOUSE_ROOMS = [
-  { id: "living", name: "Living room", short: "Living", x: 0, y: 9, wide: 18, deep: 13 },
-  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 10, deep: 9 },
-  { id: "dining", name: "Dining room", short: "Dining", x: 10, y: 0, wide: 8, deep: 9 },
-  { id: "hall", name: "Hall", x: 18, y: 0, wide: 6, deep: 22 },
-  { id: "bedroom", name: "Bedroom", x: 24, y: 0, wide: 12, deep: 9 },
-  { id: "game", name: "Game room", short: "Games", x: 24, y: 9, wide: 12, deep: 6 },
-  { id: "passage", name: "Little hall", short: "", x: 24, y: 15, wide: 12, deep: 2 },
-  { id: "bathroom", name: "Bathroom", short: "Bath", x: 24, y: 17, wide: 8, deep: 5 },
-  { id: "laundry", name: "Laundry", short: "", x: 32, y: 17, wide: 4, deep: 5 },
-  { id: "patio", name: "Front porch", short: "Porch", x: 2, y: 22, wide: 22, deep: 5, outside: true },
+  { id: "living", name: "Living room", short: "Living", x: 0, y: 8, wide: 18, deep: 14 },
+  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 9, deep: 8 },
+  { id: "dining", name: "Dining room", short: "Dining", x: 9, y: 0, wide: 9, deep: 8 },
+  { id: "bedroom", name: "Bedroom", x: 18, y: 0, wide: 12, deep: 9 },
+  { id: "landing", name: "Landing", short: "", x: 18, y: 9, wide: 4, deep: 5 },
+  { id: "bathroom", name: "Bathroom", short: "Bath", x: 22, y: 9, wide: 8, deep: 5 },
+  { id: "game", name: "Game room", short: "Games", x: 18, y: 14, wide: 12, deep: 8 },
+  { id: "patio", name: "Front porch", short: "Porch", x: 4, y: 22, wide: 8, deep: 3, outside: true },
 ];
 
-// The doors: which two rooms, and where the door is on the plan (in tiles, right on the
-// wall between them).
+// Rooms that used to be in the house, and where their furniture is now.
+const OLD_ROOMS = { hall: "landing", passage: "landing", laundry: "bathroom" };
+
+// The doors: which two rooms, where the middle of the door is on the plan (in tiles, right
+// on the wall between them), and how wide it is.
 const HOUSE_DOORS = [
-  ["kitchen", "dining", 10, 5],
-  ["dining", "living", 14, 9],
-  ["dining", "hall", 18, 5],
-  ["living", "hall", 18, 16],
-  ["hall", "bedroom", 24, 5],
-  ["hall", "game", 24, 12],
-  ["hall", "passage", 24, 16],
-  ["passage", "bathroom", 28, 17],
-  ["passage", "laundry", 34, 17],
-  ["hall", "patio", 21, 22],
+  ["kitchen", "dining", 9, 4.5, 3],
+  ["kitchen", "living", 4.5, 8, 3],
+  ["dining", "living", 14, 8, 4],
+  ["living", "landing", 18, 12, 2],
+  ["landing", "bedroom", 20, 9, 2],
+  ["landing", "bathroom", 22, 12, 2],
+  ["landing", "game", 20, 14, 2],
+  ["living", "patio", 8, 22, 2],
 ];
 const HOUSE_DOOR_SIZE = 3;       // how wide a doorway is, in tiles
 
@@ -4796,7 +4795,7 @@ function wallTiles(room) {
 // room it's on ("back", "front", "left", or "right"), and "at" is how far along that
 // side it is (0 to 1), measured on the floor (like furniture spots).
 HOUSE_ROOMS.forEach(room => { room.doors = []; });
-HOUSE_DOORS.forEach(([first, second, x, y]) => {
+HOUSE_DOORS.forEach(([first, second, x, y, size]) => {
   [[first, second], [second, first]].forEach(([id, to]) => {
     const room = HOUSE_ROOMS.find(other => other.id === id);
     const wall = wallTiles(room);
@@ -4807,7 +4806,7 @@ HOUSE_DOORS.forEach(([first, second, x, y]) => {
     else side = "right";
     const across = (x - room.x) / room.wide;
     const down = (y - room.y - wall) / (room.deep - wall);
-    room.doors.push({ to, side, x, y, at: side === "back" || side === "front" ? across : keepBetween(down, 0.05, 0.95) });
+    room.doors.push({ to, side, x, y, size, at: side === "back" || side === "front" ? across : keepBetween(down, 0.05, 0.95) });
   });
 });
 
@@ -4851,7 +4850,7 @@ function doorSpot(door, which) {
 // Which room a piece of furniture is in. (Things from before there were rooms are in the
 // first room.)
 function itemRoom(item) {
-  return item.room || HOUSE_ROOMS[0].id;
+  return OLD_ROOMS[item.room] || item.room || HOUSE_ROOMS[0].id;
 }
 
 // Each room's wallpaper and floor. They're saved as one bit of text, like
@@ -5016,8 +5015,15 @@ const FURNITURE = {
 // Each room with furniture to buy gets a page. (The shop's arrows and the room arrows
 // don't change each other.)
 const SHOP_PAGES = [
-  ...HOUSE_ROOMS.filter(room => Object.values(FURNITURE).some(kind => kind.shop === room.id))
-    .map(room => ({ id: room.id, name: room.name })),
+  { id: "living", name: "Living room" },
+  { id: "kitchen", name: "Kitchen" },
+  { id: "dining", name: "Dining room" },
+  { id: "bedroom", name: "Bedroom" },
+  { id: "bathroom", name: "Bathroom" },
+  { id: "game", name: "Game room" },
+  { id: "laundry", name: "Laundry" },
+  { id: "hall", name: "Entry" },
+  { id: "patio", name: "Front porch" },
   { id: "cats", name: "For the cats" },
   { id: "looks", name: "Walls + floors" },
 ];
@@ -5636,8 +5642,8 @@ function drawHouseWalls(house, layouts) {
     ctx.fillRect(right - thick / 2, layout.wallTop - thick / 2, thick, layout.roomHeight + thick);          // right
   });
   // The doors: a gap in the wall, with a wooden doorstep.
-  const doorway = HOUSE_DOOR_SIZE * tile;
-  HOUSE_DOORS.forEach(([first, second, x, y]) => {
+  HOUSE_DOORS.forEach(([first, second, x, y, size = HOUSE_DOOR_SIZE]) => {
+    const doorway = size * tile;
     const across = x === roomById(first).x || x === roomById(first).x + roomById(first).wide;     // a wall going up and down?
     const middleX = houseLeft + x * tile, middleY = houseTop + y * tile;
     // Fill the gap with the floor of the room in front (so it looks open).
@@ -5655,6 +5661,7 @@ function drawHouseWalls(house, layouts) {
   HOUSE_ROOMS.forEach(room => room.doors.filter(door => door.side === "back").forEach(door => {
     const layout = layouts[room.id];
     if (layout.wallHeight < 4) return;
+    const doorway = (door.size || HOUSE_DOOR_SIZE) * tile;
     const left = houseLeft + door.x * tile - doorway / 2;
     const top = layout.wallTop + layout.wallHeight * 0.12;
     const behind = FLOORS[roomLook(house.floor, door.to, "wood")] || FLOORS.wood;
