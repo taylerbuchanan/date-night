@@ -4745,9 +4745,9 @@ const HOUSE_AREAS = [
 const HOUSE_SPOTS = [
   { id: "bed_left", kind: "sleep", at: [240, 177], from: [170, 280], group: "bed" },
   { id: "bed_right", kind: "sleep", at: [326, 177], from: [405, 280], group: "bed" },
-  { id: "sofa_north", kind: "sit", at: [444, 671], from: [346, 671], facing: "left", group: "sofa" },
-  { id: "sofa_middle", kind: "sit", at: [444, 747], from: [346, 747], facing: "left", group: "sofa" },
-  { id: "sofa_south", kind: "sit", at: [444, 827], from: [346, 827], facing: "left", group: "sofa" },
+  { id: "sofa_north", kind: "sit", at: [408, 652], from: [346, 655], facing: "left", group: "sofa" },
+  { id: "sofa_middle", kind: "sit", at: [408, 758], from: [346, 747], facing: "left", group: "sofa" },
+  { id: "sofa_south", kind: "sit", at: [408, 860], from: [346, 860], facing: "left", group: "sofa" },
   { id: "gaming_blue", kind: "sit", at: [909, 255], from: [909, 310], facing: "up", group: "gaming" },
   { id: "gaming_pink", kind: "sit", at: [1066, 255], from: [1066, 310], facing: "up", group: "gaming" },
   // ("hide" = how far down the picture you show. Anything lower is covered: by the table on
