@@ -4758,7 +4758,6 @@ const HOUSE_ROOMS = [
 // wall between them).
 const HOUSE_DOORS = [
   ["kitchen", "dining", 10, 5],
-  ["kitchen", "living", 5, 9],
   ["dining", "living", 14, 9],
   ["dining", "hall", 18, 5],
   ["living", "hall", 18, 16],
@@ -6086,6 +6085,51 @@ function napAcross(item) {
   return item.flip ? 1 - across : across;
 }
 
+// Sitting and lying-down pictures of you two, cut from the pose sheets:
+// images/people/poses/<who>-<row><column>.png. Which ones we use:
+const POSES = {
+  sit: "11",          // sitting, facing out
+  sitLeft: "12",      // sitting, facing left (mirrored for facing right)
+  sitBack: "14",      // sitting with your back to us
+  lieLeft: "41",      // lying on your back, asleep, head on the left
+  lieRight: "42",     // the same, head on the right
+};
+// How big they're drawn, compared to standing up: sitting pictures by height, lying-down
+// pictures by width.
+const SIT_SIZE = 0.62, LIE_SIZE = 0.85;
+const POSE_PICTURES = {};
+function posePicture(who, pose) {
+  const name = `${who}-${POSES[pose]}`;
+  if (!POSE_PICTURES[name]) {
+    POSE_PICTURES[name] = new Image();
+    POSE_PICTURES[name].src = `images/people/poses/${name}.png`;
+  }
+  return POSE_PICTURES[name];
+}
+
+// Draws a sitting or lying pose, centered on x, with its bottom on "bottom". "size" is its
+// height (sitting) or width (lying). Mirrored = flipped left to right.
+// Gives back where it was drawn { left, top, width, height }, or null if it isn't loaded.
+function drawPose(who, pose, x, bottom, size, byWidth, mirrored) {
+  const picture = posePicture(who, pose);
+  if (!picture.naturalWidth) return null;
+  const width = byWidth ? size : size * picture.naturalWidth / picture.naturalHeight;
+  const height = byWidth ? size * picture.naturalHeight / picture.naturalWidth : size;
+  const left = Math.round((x - width / 2) * 2) / 2, top = Math.round((bottom - height) * 2) / 2;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (mirrored) {
+    ctx.translate(left + width, top);
+    ctx.scale(-1, 1);
+    ctx.drawImage(picture, 0, 0, width, height);
+  } else {
+    ctx.drawImage(picture, left, top, width, height);
+  }
+  ctx.restore();
+  return { left, top, width, height };
+}
+
 // Where the cats nap on things.
 const NAP_SPOTS = {
   bed: { x: 0.6, line: 0.78 },
@@ -6496,6 +6540,7 @@ function drawFolk(folk, layout, boxes, time) {
   let x = layout.left + folk.x * layout.roomWidth;
   let bottom = layout.floorTop + folk.y * layout.floorHeight;
   let row, column, show = 1;
+  let posed = null;      // (drawn already with a sitting or lying picture?)
 
   if (folk.doing === "using") {
     // On a piece of furniture: line them up with the cushion, pillow, or chair.
@@ -6515,6 +6560,18 @@ function drawFolk(folk, layout, boxes, time) {
       row = PERSON_ROWS[place.facing];
       column = 0;
       show = seat.show;
+      // The real sitting and lying-down pictures (see POSES).
+      const who = folk.info.sheet;
+      if (seat.sleepy && (place.facing === "left" || place.facing === "right")) {
+        // A bed turned sideways: lying down in it, head on the pillow end.
+        const head = place.facing === "right" ? "lieLeft" : "lieRight";
+        posed = drawPose(who, head, box.left + box.width * 0.5, box.top + box.height * 0.66, height * LIE_SIZE, true, false);
+      } else if (!seat.sleepy) {
+        const pose = place.facing === "down" ? "sit" : place.facing === "up" ? "sitBack" : "sitLeft";
+        // Feet on the floor in front of it (or, behind it, mostly hidden by it).
+        const feet = place.behind ? box.top + box.height * 0.92 : box.top + box.height + 1;
+        posed = drawPose(who, pose, x, feet, height * SIT_SIZE, false, place.facing === "right");
+      }
       if (seat.sleepy) {
         const drift = (time / 900 + folk.goal.spot * 0.5) % 1;
         ctx.globalAlpha = 1 - drift;
@@ -6535,7 +6592,7 @@ function drawFolk(folk, layout, boxes, time) {
     column = 0;
   }
 
-  let drawn = drawFrame(folk.info.sheet, row, column, x, bottom, height, show);
+  let drawn = posed || drawFrame(folk.info.sheet, row, column, x, bottom, height, show);
   // No cat pictures yet? The little pixel cat instead.
   if (!drawn && isCat) drawn = drawPixelCat(CATS[folk.info.cat], folk.doing === "walk" && Math.floor(time / 200) % 2, folk.facing === "left", x, bottom, height * 0.5);
   if (!drawn) return;
