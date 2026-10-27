@@ -5041,6 +5041,13 @@ const FLOORS = {
   bluecarpet: { name: "Powder blue carpet", price: 40, colors: ["#9DB0D2", "#9DB0D2"], picture: "bluecarpet" },
 };
 
+// Everything in the shop costs this much of the price written above (0.35 = about a third,
+// 1 = the full price). Prices are rounded to 5 coins, and nothing costs less than 5.
+const PRICE_SCALE = 0.35;
+[...Object.values(FURNITURE), ...Object.values(WALLPAPERS), ...Object.values(FLOORS)].forEach(thing => {
+  if (thing.price) thing.price = Math.max(5, Math.round(thing.price * PRICE_SCALE / 5) * 5);
+});
+
 // Load the wallpaper and floor tiles.
 [...Object.values(WALLPAPERS), ...Object.values(FLOORS)].forEach(look => {
   if (!look.picture) return;
@@ -5903,7 +5910,7 @@ const FOLKS = [
 ];
 
 // How tall they're drawn (bigger = bigger), and how fast they walk.
-const FOLK_HEIGHT = { person: 118, cat: 60 };
+const FOLK_HEIGHT = { person: 118, cat: 40 };
 const FOLK_SPEED = { person: 60, cat: 70 };
 
 // Where you two go on the furniture. The numbers are parts of the furniture picture
