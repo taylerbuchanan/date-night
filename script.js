@@ -3432,7 +3432,7 @@ function drawMemoryInvites(inside) {
   }
   // Inside one date's folder.
   const icons = [];
-  const icon = inviteIcon(open);
+  const icon = { ...inviteIcon(open), label: "Invitation" };
   if (icon.tag === "new") icon.tag = null;
   icons.push(icon);
   if (DATE_NIGHT && open.id === DATE_NIGHT.id) icons.push({ label: "Date night", picture: drawPlanIcon, onClick: lookBackAtDate });
@@ -4786,10 +4786,12 @@ const HOUSE_SPOTS = [
   { id: "sofa_south", kind: "sit", at: [444, 827], from: [346, 827], facing: "left", group: "sofa" },
   { id: "gaming_blue", kind: "sit", at: [909, 255], from: [909, 310], facing: "up", group: "gaming" },
   { id: "gaming_pink", kind: "sit", at: [1066, 255], from: [1066, 310], facing: "up", group: "gaming" },
-  { id: "dining_northwest", kind: "sit", at: [894, 799], from: [817, 797], facing: "down", group: "dining" },
-  { id: "dining_northeast", kind: "sit", at: [1021, 799], from: [1080, 797], facing: "down", group: "dining" },
-  { id: "dining_southwest", kind: "sit", at: [890, 950], from: [816, 950], facing: "up", group: "dining" },
-  { id: "dining_southeast", kind: "sit", at: [998, 950], from: [1080, 960], facing: "up", group: "dining" },
+  // ("hide" = how far down the picture you show. Anything lower is covered: by the table on
+  // the far side, or by the chair back on the near side.)
+  { id: "dining_northwest", kind: "sit", at: [894, 805], from: [817, 797], facing: "down", group: "dining", hide: 822 },
+  { id: "dining_northeast", kind: "sit", at: [1021, 805], from: [1080, 797], facing: "down", group: "dining", hide: 822 },
+  { id: "dining_southwest", kind: "sit", at: [898, 948], from: [816, 950], facing: "up", group: "dining", hide: 928 },
+  { id: "dining_southeast", kind: "sit", at: [992, 948], from: [1080, 960], facing: "up", group: "dining", hide: 928 },
   { id: "porch_bench", kind: "sit", at: [358, 1028], from: [365, 1080], facing: "down", group: "porch" },
   { id: "cat_bed_bedroom", kind: "nap", at: [159, 414], from: [210, 413] },
   { id: "cat_bed_living", kind: "nap", at: [636, 699], from: [568, 719] },
@@ -5554,7 +5556,18 @@ function drawFolk(folk, view, time) {
       const size = height * (SIT_SIZE[who] || 0.9);
       const poses = { down: ["sit", false, 0.4], up: ["sitBack", false, 0.32], left: ["sitLeft", false, 0.38], right: ["sitLeft", true, 0.38] };
       const [pose, mirrored, belowHips] = poses[spot.facing];
+      // (Only down to the "hide" line, if the spot has one.)
+      if (spot.hide) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(view.left, view.top, HOUSE_SIZE * scale, spot.hide * scale);
+        ctx.clip();
+      }
       drawn = drawPose(who, pose, spotX, spotY + size * belowHips, size, false, mirrored);
+      if (spot.hide) {
+        ctx.restore();
+        if (drawn) drawn.height = Math.max(4, view.top + spot.hide * scale - drawn.top);
+      }
       row = PERSON_ROWS[spot.facing];
     }
   } else if (folk.doing === "walk") {
