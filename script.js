@@ -4744,30 +4744,33 @@ const FURNITURE_SIZE = 1.3;
 // TO ADD A ROOM: add a line with a new id (one word, never change it later), and add a
 // door to it in HOUSE_DOORS.
 const HOUSE_ROOMS = [
-  { id: "living", name: "Living room", short: "Living", x: 0, y: 8, wide: 18, deep: 14 },
-  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 9, deep: 8 },
-  { id: "dining", name: "Dining room", short: "Dining", x: 9, y: 0, wide: 9, deep: 8 },
-  { id: "bedroom", name: "Bedroom", x: 18, y: 0, wide: 12, deep: 9 },
-  { id: "landing", name: "Landing", short: "", x: 18, y: 9, wide: 4, deep: 5 },
-  { id: "bathroom", name: "Bathroom", short: "Bath", x: 22, y: 9, wide: 8, deep: 5 },
-  { id: "game", name: "Game room", short: "Games", x: 18, y: 14, wide: 12, deep: 8 },
-  { id: "patio", name: "Front porch", short: "Porch", x: 4, y: 22, wide: 8, deep: 3, outside: true },
+  { id: "living", name: "Living room", short: "Living", x: 0, y: 10, wide: 20, deep: 16 },
+  { id: "bedroom", name: "Bedroom", x: 0, y: 0, wide: 12, deep: 10 },
+  { id: "bathroom", name: "Bathroom", short: "Bath", x: 12, y: 0, wide: 8, deep: 7 },
+  { id: "laundry", name: "Laundry", short: "", x: 20, y: 0, wide: 4, deep: 7 },
+  { id: "game", name: "Game room", short: "Games", x: 24, y: 0, wide: 8, deep: 10 },
+  { id: "passage", name: "Passage", short: "", x: 12, y: 7, wide: 12, deep: 3 },
+  { id: "kitchen", name: "Kitchen", x: 20, y: 10, wide: 12, deep: 8 },
+  { id: "dining", name: "Dining room", short: "Dining", x: 20, y: 18, wide: 12, deep: 8 },
+  { id: "patio", name: "Front porch", short: "Porch", x: 8, y: 26, wide: 10, deep: 3, outside: true },
 ];
 
 // Rooms that used to be in the house, and where their furniture is now.
-const OLD_ROOMS = { hall: "landing", passage: "landing", laundry: "bathroom" };
+const OLD_ROOMS = { hall: "passage", landing: "passage" };
 
 // The doors: which two rooms, where the middle of the door is on the plan (in tiles, right
 // on the wall between them), and how wide it is.
 const HOUSE_DOORS = [
-  ["kitchen", "dining", 9, 4.5, 3],
-  ["kitchen", "living", 4.5, 8, 3],
-  ["dining", "living", 14, 8, 4],
-  ["living", "landing", 18, 12, 2],
-  ["landing", "bedroom", 20, 9, 2],
-  ["landing", "bathroom", 22, 12, 2],
-  ["landing", "game", 20, 14, 2],
-  ["living", "patio", 8, 22, 2],
+  ["bedroom", "passage", 12, 8.6, 2],
+  ["bathroom", "passage", 15, 7, 2],
+  ["laundry", "passage", 21, 7, 1.8],
+  ["game", "passage", 24, 8.6, 2],
+  ["passage", "living", 14.5, 10, 2.6],
+  ["passage", "kitchen", 21.3, 10, 2],
+  ["living", "kitchen", 20, 15.5, 3],
+  ["living", "dining", 20, 22.5, 3],
+  ["kitchen", "dining", 25, 18, 4],
+  ["living", "patio", 12.5, 26, 2],
 ];
 const HOUSE_DOOR_SIZE = 3;       // how wide a doorway is, in tiles
 
@@ -4778,10 +4781,11 @@ const HOUSE_ROOMY = 1.6;
 // 1 = the whole house fits in the window.
 const HOUSE_ZOOM_OUT = 1, HOUSE_ZOOM_IN = 2.6;
 state.houseZoom = 1.6;                   // how zoomed in it is (it starts zoomed in a bit)
+state.houseZoomGoal = 1.6;               // where the zoom is gliding to
 
 // Zooms in (bigger number) or out (smaller number), staying between the two limits.
 function zoomHouse(times) {
-  state.houseZoom = keepBetween(state.houseZoom * times, HOUSE_ZOOM_OUT, HOUSE_ZOOM_IN);
+  state.houseZoomGoal = keepBetween(state.houseZoomGoal * times, HOUSE_ZOOM_OUT, HOUSE_ZOOM_IN);
 }
 state.houseCamera = { x: 0.5, y: 0.5 };  // the middle of what you see (0 to 1 across and down the house)
 state.houseCameraGoal = { x: 0.5, y: 0.5 };   // where it's gliding to
@@ -5395,6 +5399,7 @@ function fillPattern(look, x, y, width, height, unit) {
 // The whole house window: the whole house on the left (every room at once, like a floor
 // plan), and the shop on the right.
 let houseLayouts = {};   // where each room was drawn (for dragging furniture between rooms)
+let pathGridFor = "";    // (where the furniture was when pathGrid was worked out)
 function drawHouse(inside, time) {
   if (state.online !== "ok") {
     drawOnlineProblem(inside, "decorate your house");
@@ -5431,6 +5436,7 @@ function drawHouse(inside, time) {
   if (houseKeys.has("d") || houseKeys.has("arrowright")) goal.x += 0.012;
   if (houseKeys.has("w") || houseKeys.has("arrowup")) goal.y -= 0.012;
   if (houseKeys.has("s") || houseKeys.has("arrowdown")) goal.y += 0.012;
+  state.houseZoom += (state.houseZoomGoal - state.houseZoom) * 0.25;
   state.houseCamera.x += (goal.x - state.houseCamera.x) * 0.2;
   state.houseCamera.y += (goal.y - state.houseCamera.y) * 0.2;
   // (Only draw inside the space, since the house can be bigger than it.)
@@ -5469,6 +5475,13 @@ function drawHouse(inside, time) {
     const spot = item.id === dragId ? houseDrag.spot : clampSpot(item, itemSpot(item), itsLayout);
     boxes[item.id] = furnitureBox(item, itsLayout, spot);
   });
+
+  // Where they can walk (worked out again only when furniture moves).
+  const furnitureNow = placed.map(item => `${item.id}:${Math.round(boxes[item.id].left / layouts[HOUSE_ROOMS[0].id].tile * 4)}:${Math.round(boxes[item.id].top / layouts[HOUSE_ROOMS[0].id].tile * 4)}:${item.room}:${itemFacing(item)}`).join(",") + state.houseZoom.toFixed(3);
+  if (furnitureNow !== pathGridFor) {
+    pathGrid = buildPathGrid(placed, boxes, layouts);
+    pathGridFor = furnitureNow;
+  }
 
   // You two and the cats decide what to do next, and move a little.
   updateFolks(layouts, placed, boxes, time);
@@ -5531,6 +5544,57 @@ window.addEventListener("keydown", event => withWindow(topWindow(), () => {
 window.addEventListener("keyup", event => houseKeys.delete(event.key.toLowerCase()));
 window.addEventListener("blur", () => houseKeys.clear());     // (let go of everything when you click away)
 
+// The furniture in Codex's floor plan picture, room by room: [kind, room, x, y, facing].
+// x and y are like any furniture spot (0 to 1; for floor things, y is how far toward the
+// front its bottom edge is). The "Set up" button (top left of the house) puts these out.
+// Doorways and the paths between them are kept clear.
+const PLAN_FURNITURE = [
+  // Bedroom: the bed against the back wall with a nightstand each side, on a rug, a dresser
+  // on the left wall, a vanity on the right wall, a plant in the corner.
+  ["rug", "bedroom", 0.4, 0.85], ["creambed", "bedroom", 0.4, 0.62], ["nightstand", "bedroom", 0.18, 0.14],
+  ["nightstand", "bedroom", 0.62, 0.14], ["dresser", "bedroom", 0.06, 0.5, "right"],
+  ["vanity", "bedroom", 0.93, 0.42, "left"], ["plant", "bedroom", 0.06, 0.08],
+  // Bathroom: the bathtub and sink along the back wall, the toilet on the right, a bath mat.
+  ["bathtub", "bathroom", 0.32, 0.25], ["bathsink", "bathroom", 0.84, 0.18], ["toilet", "bathroom", 0.9, 0.75, "left"],
+  ["bathmat", "bathroom", 0.3, 0.55],
+  // Laundry: the washer and dryer side by side, and a hamper.
+  ["washer", "laundry", 0.27, 0.22], ["dryer", "laundry", 0.75, 0.22], ["hamper", "laundry", 0.8, 0.95],
+  // Game room: the gaming desk for two along the back wall, a round rug, the bookcase on
+  // the right wall.
+  ["gamingdesk", "game", 0.45, 0.22], ["ovalrug", "game", 0.48, 0.66], ["gamebookcase", "game", 0.93, 0.62, "left"],
+  ["pegboard", "game", 0.45, 0.4],
+  // Living room: the couch with a little lamp table, the coffee table in front, the TV on
+  // the left wall facing the couch, an armchair at an angle, and the cats' corner (bed and
+  // tree) at the front left.
+  ["couch", "living", 0.4, 0.3], ["sidetable", "living", 0.62, 0.3], ["table", "living", 0.4, 0.5],
+  ["tv", "living", 0.06, 0.48, "right"], ["armchair", "living", 0.64, 0.6, "frontleft"],
+  ["catbedgray", "living", 0.09, 0.93], ["cattree", "living", 0.21, 0.94], ["plant", "living", 0.94, 0.95],
+  ["window", "living", 0.3, 0.45],
+  // Kitchen: counters and the sink along the back wall, the stove and fridge on the right wall.
+  ["counter", "kitchen", 0.38, 0.05], ["sink", "kitchen", 0.6, 0.05], ["counter", "kitchen", 0.8, 0.05],
+  ["stove", "kitchen", 0.94, 0.45, "left"], ["fridge", "kitchen", 0.94, 0.97, "left"], ["wallcupboard", "kitchen", 0.6, 0.35],
+  // Dining room: the table on a rug with a chair on each side, a cabinet on the right wall.
+  ["rug", "dining", 0.5, 0.85], ["diningtable", "dining", 0.5, 0.64], ["pinkchair", "dining", 0.28, 0.68, "right"],
+  ["bluechair", "dining", 0.72, 0.68, "left"], ["displaycabinet", "dining", 0.94, 0.5, "left"], ["plant", "dining", 0.06, 0.97],
+  // Front porch: a planter on each side (the front door and steps stay clear).
+  ["planter", "patio", 0.15, 0.5], ["planter", "patio", 0.85, 0.5],
+];
+
+// Puts away everything that's out, then sets up every room like the floor plan picture.
+// (Your furniture isn't gone: it's in "Mine", to put back out whenever you want.)
+state.houseSetUpAsked = 0;     // when "Set up" was clicked once (it has to be clicked twice)
+function setUpLikePlan() {
+  if (blockedInPreview()) return;
+  playSound("paper", 0.6);
+  const now = Date.now().toString(36);
+  const items = state.house.items.map(item => (item.placed ? { ...item, placed: false } : item));
+  PLAN_FURNITURE.forEach(([type, room, x, y, facing], number) => {
+    if (!FURNITURE[type]) return;
+    items.push({ id: `${type}-${now}-${number}`, type, x, y, flip: false, placed: true, room, facing: facing || "front" });
+  });
+  saveHouse({ items });
+}
+
 // Adds a click spot, but only the part of it inside the house's space (things can be
 // hidden past the edges when you're zoomed in).
 function houseHitBox(box) {
@@ -5544,28 +5608,34 @@ function houseHitBox(box) {
 // (only where there's more house that way).
 function drawHouseCameraButtons(space) {
   [[-1, "−"], [1, "+"]].forEach(([change, label], number) => {
-    const can = change > 0 ? state.houseZoom < HOUSE_ZOOM_IN - 0.01 : state.houseZoom > HOUSE_ZOOM_OUT + 0.01;
+    const can = change > 0 ? state.houseZoomGoal < HOUSE_ZOOM_IN - 0.01 : state.houseZoomGoal > HOUSE_ZOOM_OUT + 0.01;
     drawButton(space.left + 14 + number * 24, space.top + 14, 20, 20, label, can ? COLORS.white : COLORS.cream,
                can ? COLORS.text : "#B9A9C4", () => { if (can) { playSound("click"); zoomHouse(change > 0 ? 1.35 : 1 / 1.35); } });
   });
-  const camera = state.houseCamera, goal = state.houseCameraGoal;
-  const width = space.right - space.left, height = space.bottom - space.top;
-  const layout = houseLayouts[HOUSE_ROOMS[0].id];
-  const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide)) * layout.tile;
-  const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep)) * layout.tile;
-  const halfX = (width - 12) / 2 / across, halfY = (height - 12) / 2 / down;
+  // "Set up": puts out the furniture from the floor plan picture (click twice, to be sure).
+  // (The second click has to come a moment after the first, so one click can't count twice.)
+  const sinceAsked = performance.now() - state.houseSetUpAsked;
+  const asked = state.houseSetUpAsked > 0 && sinceAsked < 4000;
+  const ready = sinceAsked > 400 && asked;
+  drawButton(space.left + 104, space.top + 14, 100, 20, asked ? "Sure? Click!" : "Set up rooms", asked ? COLORS.acceptFill : COLORS.white,
+             asked ? COLORS.acceptText : COLORS.text, () => {
+               if (ready) { state.houseSetUpAsked = 0; setUpLikePlan(); }
+               else if (!asked) { playSound("click"); state.houseSetUpAsked = performance.now(); }
+             });
+
+  // The arrows: each one takes the camera to the next room that way.
   const arrows = [
-    { key: "x", way: -1, x: space.left + 14, y: (space.top + space.bottom) / 2, more: halfX < 0.5 && camera.x > halfX + 0.01 },
-    { key: "x", way: 1, x: space.right - 14, y: (space.top + space.bottom) / 2, more: halfX < 0.5 && camera.x < 1 - halfX - 0.01 },
-    { key: "y", way: -1, x: (space.left + space.right) / 2, y: space.top + 14, more: halfY < 0.5 && camera.y > halfY + 0.01 },
-    { key: "y", way: 1, x: (space.left + space.right) / 2, y: space.bottom - 14, more: halfY < 0.5 && camera.y < 1 - halfY - 0.01 },
+    { key: "x", way: -1, x: space.left + 14, y: (space.top + space.bottom) / 2 },
+    { key: "x", way: 1, x: space.right - 14, y: (space.top + space.bottom) / 2 },
+    { key: "y", way: -1, x: (space.left + space.right) / 2, y: space.top + 14 },
+    { key: "y", way: 1, x: (space.left + space.right) / 2, y: space.bottom - 14 },
   ];
-  arrows.filter(arrow => arrow.more).forEach(arrow => {
+  arrows.forEach(arrow => { arrow.room = roomThatWay(arrow.key, arrow.way); });
+  arrows.filter(arrow => arrow.room).forEach(arrow => {
     const id = `house:pan:${arrow.key}${arrow.way}`;
     const box = { left: arrow.x - 11, top: arrow.y - 11, right: arrow.x + 11, bottom: arrow.y + 11, id, onClick: () => {
       playSound("click");
-      // Move about half of what you can see.
-      goal[arrow.key] += arrow.way * (arrow.key === "x" ? halfX : halfY);
+      lookAtRoom(arrow.room);
     } };
     hitBoxes.push(box);
     steppedBox(box.left, box.top, box.right, box.bottom, 2, state.hoverId === id ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
@@ -5581,11 +5651,48 @@ function drawHouseCameraButtons(space) {
   });
 }
 
+// How big the whole floor plan is, in tiles (with a little extra at the bottom for the
+// front steps).
+function houseSize() {
+  return { across: Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide)),
+           down: Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep)) + 1.5 };
+}
+
+// The middle of what you're looking at, in tiles on the floor plan.
+function cameraMiddle() {
+  const { across, down } = houseSize();
+  return { x: state.houseCameraGoal.x * across, y: state.houseCameraGoal.y * down };
+}
+
+// The closest room that way ("x" or "y", -1 or 1) from the middle of what you see.
+function roomThatWay(key, way) {
+  const middle = cameraMiddle();
+  let best = null, bestAway = Infinity;
+  HOUSE_ROOMS.forEach(room => {
+    const center = { x: room.x + room.wide / 2, y: room.y + room.deep / 2 };
+    const ahead = (center[key] - middle[key]) * way;
+    const sideways = Math.abs(center[key === "x" ? "y" : "x"] - middle[key === "x" ? "y" : "x"]);
+    if (ahead < 1.5) return;                      // (not that way)
+    const away = ahead + sideways * 1.5;
+    if (away < bestAway) { best = room; bestAway = away; }
+  });
+  return best;
+}
+
+// Glides the camera over to a room, zoomed in so the room fills what you see.
+function lookAtRoom(room) {
+  const { across, down } = houseSize();
+  const space = houseSpace, width = space.right - space.left - 12, height = space.bottom - space.top - 12;
+  const fit = Math.min(width / across, height / down);
+  state.houseZoomGoal = keepBetween(Math.min(width / (room.wide + 2) / fit, height / (room.deep + 2) / fit), HOUSE_ZOOM_OUT, HOUSE_ZOOM_IN);
+  state.houseCameraGoal.x = (room.x + room.wide / 2) / across;
+  state.houseCameraGoal.y = (room.y + room.deep / 2) / down;
+}
+
 // Where every room goes on the screen: the whole floor plan, as big as fits, in the middle.
 // Each room's layout says where its wall strip and floor are, and how big the pictures are.
 function houseRoomLayouts(space, sidebar) {
-  const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide));
-  const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep));
+  const { across, down } = houseSize();
   const width = space.right - space.left, height = space.bottom - space.top;
   // Zoomed all the way out, the whole house fits. Zoomed in, it's bigger than the window,
   // and the camera says which part you see.
@@ -5674,8 +5781,40 @@ function drawHouseWalls(house, layouts) {
     ctx.lineWidth = 2;
     ctx.strokeRect(left - 1, top - 1, doorway + 2, layout.floorTop - top + 1);
   }));
-  // A little front door mat outside the front door.
-  ctx.fillStyle = "#3E3446";
+  // The front porch: a little wooden railing around its edges, with a gap at the front for
+  // the steps, and stone steps going down to the yard.
+  const porch = roomById("patio"), porchLayout = layouts.patio;
+  if (porchLayout) {
+    const left = porchLayout.left, right = left + porchLayout.roomWidth, top = porchLayout.wallTop;
+    const middle = porch.x + porch.wide / 2;
+    const bottom = top + porchLayout.roomHeight, gapLeft = houseLeft + (middle - 1.2) * tile, gapRight = houseLeft + (middle + 1.2) * tile;
+    const rail = Math.max(2, tile * 0.22);
+    ctx.fillStyle = "#9C6A44";
+    ctx.fillRect(left, top, rail, bottom - top);                       // left side
+    ctx.fillRect(right - rail, top, rail, bottom - top);               // right side
+    ctx.fillRect(left, bottom - rail, gapLeft - left, rail);           // front, left of the steps
+    ctx.fillRect(gapRight, bottom - rail, right - gapRight, rail);     // front, right of the steps
+    ctx.fillStyle = "#6E4A30";                                          // posts
+    [left, gapLeft - rail, gapRight, right - rail].forEach(x => ctx.fillRect(x, bottom - rail * 2, rail, rail * 2));
+    // The steps.
+    for (let step = 0; step < 3; step++) {
+      ctx.fillStyle = step % 2 ? "#B9B2AA" : "#C9C2B8";
+      ctx.fillRect(gapLeft + step * tile * 0.15, bottom + step * tile * 0.45, gapRight - gapLeft - step * tile * 0.3, tile * 0.45);
+    }
+    ctx.strokeStyle = "#8C857D";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(gapLeft, bottom, gapRight - gapLeft, tile * 1.35);
+    if (porch.outside) {
+      // A few flowers by the steps.
+      [[gapLeft - tile * 0.6, bottom + tile * 0.4, "#F07A9C"], [gapRight + tile * 0.4, bottom + tile * 0.5, "#FFE08A"],
+       [gapLeft - tile * 1.3, bottom + tile * 0.7, "#C9B6F2"]].forEach(([x, y, color]) => {
+        ctx.fillStyle = "#5E9E5A";
+        ctx.fillRect(x, y, tile * 0.5, tile * 0.3);
+        ctx.fillStyle = color;
+        ctx.fillRect(x + tile * 0.1, y - tile * 0.1, tile * 0.2, tile * 0.2);
+      });
+    }
+  }
 }
 
 // A room's name on a little cream sign, at the front of the room (the short name if the
@@ -6295,20 +6434,189 @@ function folkIsFree(folk) {
   return !folk.with && !folk.leaving && !folk.goal && (folk.doing === "stand" || folk.doing === "sit");
 }
 
-// The first door to walk through to get from one room to another (the shortest way).
-function doorToward(from, to) {
-  const firstDoor = { [from]: null };
-  const rooms = [from];
-  while (rooms.length) {
-    const id = rooms.shift();
-    if (id === to) return firstDoor[id];
-    roomById(id).doors.forEach(door => {
-      if (door.to in firstDoor) return;
-      firstDoor[door.to] = firstDoor[id] || door;
-      rooms.push(door.to);
-    });
+// ---------- Finding the way around the house ----------
+//
+// You two and the cats walk around furniture and walls, through the doors. The floor is
+// split into little squares (PATH_STEP tiles across). Each square is open or blocked, and
+// they find the shortest way through the open ones.
+const PATH_STEP = 0.5;      // how big each little square is, in tiles
+const PATH_ROOM = 0.35;     // how much room they leave around furniture and walls, in tiles
+let pathGrid = null;        // the squares (rebuilt whenever furniture moves)
+
+// Where someone is on the floor plan, in tiles.
+function folkPlace(folk) {
+  const room = roomById(folk.room), wall = wallTiles(room);
+  return { x: room.x + folk.x * room.wide, y: room.y + wall + folk.y * (room.deep - wall) };
+}
+
+// Puts someone at a spot on the floor plan (in whichever room that spot is in).
+function moveFolkTo(folk, x, y) {
+  const room = HOUSE_ROOMS.find(other => x >= other.x && x <= other.x + other.wide && y >= other.y && y <= other.y + other.deep)
+               || roomById(folk.room);
+  const wall = wallTiles(room);
+  folk.room = room.id;
+  folk.x = (x - room.x) / room.wide;
+  folk.y = (y - room.y - wall) / (room.deep - wall);
+}
+
+// A spot in a room on the floor plan, from a spot like furniture has (x and y from 0 to 1).
+function roomPlace(roomId, x, y) {
+  const room = roomById(roomId), wall = wallTiles(room);
+  return { x: room.x + x * room.wide, y: room.y + wall + y * (room.deep - wall) };
+}
+
+// Works out which little squares are open: room floors (not right up against the walls),
+// doorways (and the bit of back wall a back door goes through), minus the spot each piece
+// of furniture stands on. "boxes" says where each piece is drawn on the screen.
+function buildPathGrid(placed, boxes, layouts) {
+  const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide));
+  const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep));
+  const columns = Math.ceil(across / PATH_STEP), rows = Math.ceil(down / PATH_STEP);
+  const open = new Uint8Array(columns * rows);
+  const each = paint => {
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        const result = paint((column + 0.5) * PATH_STEP, (row + 0.5) * PATH_STEP);
+        if (result !== undefined) open[row * columns + column] = result;
+      }
+    }
+  };
+  // Room floors.
+  HOUSE_ROOMS.forEach(room => {
+    const top = room.y + wallTiles(room) + 0.2, bottom = room.y + room.deep - PATH_ROOM;
+    each((x, y) => (x > room.x + PATH_ROOM && x < room.x + room.wide - PATH_ROOM && y > top && y < bottom ? 1 : undefined));
+  });
+  // Doorways.
+  HOUSE_DOORS.forEach(([first, second, doorX, doorY, size = HOUSE_DOOR_SIZE]) => {
+    const one = roomById(first), two = roomById(second);
+    const upAndDown = doorX === one.x || doorX === one.x + one.wide;
+    if (upAndDown) {
+      each((x, y) => (Math.abs(x - doorX) < 0.9 && Math.abs(y - doorY) < size / 2 - 0.25 ? 1 : undefined));
+    } else {
+      // Through the back wall of the room in front (the lower one on the plan).
+      const lower = one.y > two.y ? one : two;
+      each((x, y) => (Math.abs(x - doorX) < size / 2 - 0.25 && y > doorY - 0.9 && y < doorY + wallTiles(lower) + 0.6 ? 1 : undefined));
+    }
+  });
+  // Furniture (not rugs or things on the wall) blocks the floor it stands on.
+  placed.forEach(item => {
+    const kind = FURNITURE[item.type], box = boxes[item.id];
+    if (kind.rug || kind.wall || !box) return;
+    const layout = layouts[itemRoom(item)];
+    if (!layout) return;
+    const room = roomById(itemRoom(item));
+    const left = room.x + (box.left - layout.left) / layout.tile, right = left + box.width / layout.tile;
+    const bottom = room.y + (box.top + box.height - layout.wallTop) / layout.tile;
+    const deep = Math.min(box.height / layout.tile * 0.5, 4);       // how far back it goes
+    const shave = (right - left) * 0.1;
+    each((x, y) => (x > left + shave - PATH_ROOM && x < right - shave + PATH_ROOM &&
+                    y > bottom - deep - PATH_ROOM && y < bottom + PATH_ROOM * 0.6 ? 0 : undefined));
+  });
+  return { open, columns, rows };
+}
+
+function pathSquare(x, y) {
+  return { column: keepBetween(Math.floor(x / PATH_STEP), 0, pathGrid.columns - 1),
+           row: keepBetween(Math.floor(y / PATH_STEP), 0, pathGrid.rows - 1) };
+}
+function squareOpen(column, row) {
+  return column >= 0 && row >= 0 && column < pathGrid.columns && row < pathGrid.rows && pathGrid.open[row * pathGrid.columns + column];
+}
+// The closest open square to this one (searching outward), or null.
+function nearestOpen(square) {
+  for (let reach = 0; reach < 14; reach++) {
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== reach) continue;
+        if (squareOpen(square.column + dx, square.row + dy)) return { column: square.column + dx, row: square.row + dy };
+      }
+    }
   }
   return null;
+}
+// Can you walk in a straight line from one spot to another without hitting anything?
+function clearLine(from, to) {
+  const steps = Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / (PATH_STEP / 2));
+  for (let step = 1; step < steps; step++) {
+    const square = pathSquare(from.x + (to.x - from.x) * step / steps, from.y + (to.y - from.y) * step / steps);
+    if (!squareOpen(square.column, square.row)) return false;
+  }
+  return true;
+}
+
+// The way from one spot on the floor plan to another: a list of spots to walk to, in order
+// (or null if there's no way there). It's the shortest way through the open squares
+// (the "A star" way of finding it), then smoothed out into straight lines.
+function findPath(from, to) {
+  if (!pathGrid) return null;
+  const start = nearestOpen(pathSquare(from.x, from.y)), goal = nearestOpen(pathSquare(to.x, to.y));
+  if (!start || !goal) return null;
+  const { columns } = pathGrid;
+  const key = square => square.row * columns + square.column;
+  const guess = square => Math.hypot(square.column - goal.column, square.row - goal.row);
+  const cost = new Map([[key(start), 0]]), cameFrom = new Map();
+  const waiting = [{ square: start, score: guess(start) }];
+  let found = false;
+  while (waiting.length) {
+    // Look at the most promising square next.
+    let best = 0;
+    for (let n = 1; n < waiting.length; n++) if (waiting[n].score < waiting[best].score) best = n;
+    const { square } = waiting.splice(best, 1)[0];
+    if (square.column === goal.column && square.row === goal.row) { found = true; break; }
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const next = { column: square.column + dx, row: square.row + dy };
+        if (!squareOpen(next.column, next.row)) continue;
+        // (No squeezing diagonally between two blocked squares.)
+        if (dx && dy && (!squareOpen(square.column + dx, square.row) || !squareOpen(square.column, square.row + dy))) continue;
+        const nextCost = cost.get(key(square)) + (dx && dy ? 1.414 : 1);
+        if (cost.has(key(next)) && cost.get(key(next)) <= nextCost) continue;
+        cost.set(key(next), nextCost);
+        cameFrom.set(key(next), square);
+        waiting.push({ square: next, score: nextCost + guess(next) });
+      }
+    }
+  }
+  if (!found) return null;
+  // Back from the goal to the start, as spots on the floor plan.
+  const spots = [];
+  for (let square = goal; square; square = cameFrom.get(key(square))) {
+    spots.unshift({ x: (square.column + 0.5) * PATH_STEP, y: (square.row + 0.5) * PATH_STEP });
+  }
+  // End exactly where they wanted to go, if that spot is open.
+  const end = pathSquare(to.x, to.y);
+  if (squareOpen(end.column, end.row)) spots[spots.length - 1] = { x: to.x, y: to.y };
+  // Smooth it out: skip any spots you can see past.
+  const smooth = [];
+  let here = from;
+  for (let n = 0; n < spots.length; n++) {
+    if (n === spots.length - 1 || !clearLine(here, spots[n + 1])) {
+      smooth.push(spots[n]);
+      here = spots[n];
+    }
+  }
+  return smooth;
+}
+
+// Starts someone walking to a spot on the floor plan (around everything in the way).
+// Gives back false if there's no way there.
+function walkTo(folk, spot) {
+  const path = findPath(folkPlace(folk), spot);
+  if (!path) return false;
+  folk.path = path;
+  folk.doing = "walk";
+  return true;
+}
+
+// A random open spot on the floor of a room.
+function randomSpot(roomId) {
+  for (let tries = 0; tries < 20; tries++) {
+    const spot = roomPlace(roomId, between(0.08, 0.92, Math.random()), between(0.1, 0.95, Math.random()));
+    const square = pathSquare(spot.x, spot.y);
+    if (squareOpen(square.column, square.row)) return spot;
+  }
+  return roomPlace(roomId, 0.5, 0.6);
 }
 
 // Are they still on their way to the one they're going to see? (Not if that one left the
@@ -6361,7 +6669,8 @@ function makeFolks() {
     info, x: 0.2 + number * 0.2, y: 0.55 + (number % 2) * 0.25, facing: "down",
     // Which room they're in. They start spread out, so no room is empty.
     room: HOUSE_ROOMS[number % HOUSE_ROOMS.length].id,
-    leaving: null,  // the door they're walking out of, into the room next door
+    leaving: null,  // (not used anymore: they find their way with paths now)
+    path: null,     // the spots they're walking to, in order (see findPath)
     with: null,     // who they're going to see or are with: { id, kind } (see FOLK_LOVE)
     doing: info.person ? "stand" : "sit", timer: 1 + number * 1.5, target: null, goal: null, petted: 0,
   }));
@@ -6395,9 +6704,11 @@ function updateFolks(layouts, placed, boxes, time) {
         startChat(folk, partner);
       }
     }
-    // The furniture they were using got moved, put away, or taken to another room? They get up.
+    // The furniture they were using (or walking to) got moved, put away, or taken to
+    // another room? They get up (or never mind).
     const using = folk.goal && byId[folk.goal.itemId];
-    if (folk.goal && (!using || itemRoom(using) !== folk.room || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
+    const moved = folk.doing === "using" ? itemRoom(using || {}) !== folk.room : using && itemRoom(using) !== folk.goal.room;
+    if (folk.goal && (!using || moved || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
       folk.goal = null;
       folk.doing = folk.info.person ? "stand" : "sit";
       folk.timer = 1.5;
@@ -6411,50 +6722,44 @@ function updateFolks(layouts, placed, boxes, time) {
     }
 
     if (folk.doing === "walk") {
-      const target = folk.target;
-      const dx = (target.x - folk.x) * layout.roomWidth, dy = (target.y - folk.y) * layout.floorHeight;
-      const distance = Math.hypot(dx, dy);
-      const speed = FOLK_SPEED[folk.info.person ? "person" : "cat"] * layout.art;
-      if (distance < 1.5) {
-        // Made it! Sit / nap / work if they were heading to some furniture.
-        folk.x = target.x;
-        folk.y = target.y;
-        if (folk.leaving) {
-          // Out the door: come in through the matching door of the room next door, and
-          // walk a little way in.
-          const from = folk.room;
-          folk.room = folk.leaving.to;
-          const door = doorBetween(folk.room, from);
-          const outside = door ? doorSpot(door, "outside") : { x: 0.5, y: 1.1 };
-          folk.x = outside.x;
-          folk.y = outside.y;
-          folk.target = door ? doorSpot(door, "inside") : { x: 0.5, y: 0.7 };
-          folk.leaving = null;
-          return;
-        }
-        if (folk.with) {
-          startTogether(folk);
-          return;
-        }
-        if (folk.goal) {
-          folk.doing = "using";
-          folk.timer = between(10, 25, Math.random());
-        } else {
-          folk.doing = folk.info.person ? "stand" : "sit";
-          folk.timer = between(2, 5, Math.random());
-        }
-      } else {
-        const step = Math.min(distance, speed * seconds);
-        folk.x += (dx / distance) * step / layout.roomWidth;
-        folk.y += (dy / distance) * step / layout.floorHeight;
-        folk.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+      // Walk toward the next spot on their way (in tiles on the floor plan).
+      const here = folkPlace(folk), next = folk.path && folk.path[0];
+      if (!next) {
+        arrive(folk);
+        return;
       }
+      const dx = next.x - here.x, dy = next.y - here.y;
+      const distance = Math.hypot(dx, dy);
+      const speed = FOLK_SPEED[folk.info.person ? "person" : "cat"] * layout.art / layout.tile;    // tiles a second
+      if (distance < 0.05) {
+        folk.path.shift();
+        if (!folk.path.length) arrive(folk);
+        return;
+      }
+      const step = Math.min(distance, speed * seconds);
+      moveFolkTo(folk, here.x + dx / distance * step, here.y + dy / distance * step);
+      folk.facing = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
       return;
     }
 
     folk.timer -= seconds;
     if (folk.timer <= 0) chooseWhatToDo(folk, placed, boxes, layout);
   });
+}
+
+// They got where they were going: sit / nap / work if it was some furniture, or smooch,
+// chat, or pet if they were going to see someone. Otherwise, just stand there a bit.
+function arrive(folk) {
+  folk.path = null;
+  if (folk.with) {
+    startTogether(folk);
+  } else if (folk.goal) {
+    folk.doing = "using";
+    folk.timer = between(10, 25, Math.random());
+  } else {
+    folk.doing = folk.info.person ? "stand" : "sit";
+    folk.timer = between(2, 5, Math.random());
+  }
 }
 
 // Picks something new to do, at random (furniture only if it's in the room).
@@ -6519,35 +6824,35 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   }
   const choice = choices[Math.floor(Math.random() * choices.length)];
 
+  // (If there's no way to get where they picked, they just stand there a bit.)
+  const giveUp = () => {
+    folk.goal = null;
+    folk.with = null;
+    folk.doing = isCat ? "sit" : "stand";
+    folk.timer = 2;
+  };
   if (choice === "walk") {
-    folk.doing = "walk";
-    folk.target = { x: between(0.08, 0.92, Math.random()), y: between(0.3, 0.95, Math.random()) };
+    if (!walkTo(folk, randomSpot(folk.room))) giveUp();
   } else if (choice === "leave") {
-    // Walk out one of the doors (see updateFolks for coming in the other side).
+    // Into a room next door.
     const doors = roomById(folk.room).doors;
-    folk.doing = "walk";
-    folk.leaving = doors[Math.floor(Math.random() * doors.length)];
-    folk.target = doorSpot(folk.leaving, "outside");
+    const door = doors[Math.floor(Math.random() * doors.length)];
+    if (!door || !walkTo(folk, randomSpot(door.to))) giveUp();
   } else if (choice === "find") {
-    // Head toward the room the other one is in (one door at a time).
-    const door = doorToward(folk.room, partner.room);
-    folk.doing = "walk";
-    folk.leaving = door;
-    folk.target = door ? doorSpot(door, "outside") : { x: 0.5, y: 0.7 };
+    // Go to the room the other one is in.
+    if (!walkTo(folk, randomSpot(partner.room))) giveUp();
   } else if (choice.meet) {
     // Walk over next to them. (They wait for you, unless you're a cat coming to say hi.)
     const other = choice.meet;
     // (How far apart they stand: close for a smooch, a little further for talking.)
-    const gap = { smooch: 40, chat: 62, flowers: 62, pet: 42, visit: 34 }[choice.kind] * layout.art / layout.roomWidth;
-    const side = folk.x < other.x ? -1 : 1;
-    let x = other.x + side * gap;
-    if (x < 0.04 || x > 0.96) x = other.x - side * gap;
-    folk.doing = "walk";
-    folk.target = { x: keepBetween(x, 0.03, 0.97), y: other.y };
+    const gap = { smooch: 40, chat: 62, flowers: 62, pet: 42, visit: 34 }[choice.kind] * layout.art / layout.tile;
+    const there = folkPlace(other), here = folkPlace(folk);
+    const side = here.x < there.x ? -1 : 1;
+    if (!walkTo(folk, { x: there.x + side * gap, y: there.y })) { giveUp(); return; }
     folk.with = { id: other.info.id, kind: choice.kind };
     if (choice.kind !== "visit") {
       other.doing = "wait";
-      other.timer = 8;
+      other.timer = 12;
       other.with = { id: folk.info.id, kind: "waiting" };
     }
   } else if (typeof choice === "string") {
@@ -6560,9 +6865,8 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     const across = choice.nap ? napAcross(item) : seatSpot(item, choice.spot).across;
     const x = (box.left + box.width * across - layout.left) / layout.roomWidth;
     const y = (box.top + box.height - layout.floorTop) / layout.floorHeight + 0.04;
-    folk.goal = choice;
-    folk.doing = "walk";
-    folk.target = { x: keepBetween(x, 0.03, 0.97), y: keepBetween(y, 0.1, 1) };
+    folk.goal = { ...choice, room: folk.room };
+    if (!walkTo(folk, roomPlace(folk.room, keepBetween(x, 0.03, 0.97), keepBetween(y, 0.05, 1)))) giveUp();
   }
 }
 
