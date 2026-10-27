@@ -5165,6 +5165,11 @@ function furnitureSize(type, art, facing = "front") {
   // shrink the picture. The other sides are shrunk the same amount (their pictures are
   // already the same height as the front one).
   const scale = art * (kind.width ? kind.width / picture.naturalWidth : (kind.size || 1));
+  // A rug turned long ways is spun flat on the floor: narrower, and reaching further
+  // back (see RUG_LONG).
+  if (kind.rug && (facing === "right" || facing === "left")) {
+    return { width: picture.naturalWidth * scale / RUG_LONG, height: picture.naturalHeight * scale * RUG_LONG };
+  }
   const turned = facingPicture(type, facing);
   return { width: (turned.naturalWidth || turned.width) * scale, height: (turned.naturalHeight || turned.height) * scale };
 }
@@ -5177,6 +5182,9 @@ function itemFacing(item) {
 
 // The order the Turn button goes in.
 const FACINGS = ["front", "right", "back", "left"];
+
+// How much longer a rug looks when it's turned long ways (bigger = longer and skinnier).
+const RUG_LONG = 1.6;
 
 // Keeps a spot inside the room: not hanging off the sides, wall things on the wall, and
 // floor things standing on the floor.
@@ -5280,7 +5288,12 @@ function drawFurniturePicture(type, box, flip, facing = "front") {
   // These pictures are big and get shrunk down, so smoothing makes them look neat.
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  if (flip) {
+  if (FURNITURE[type].rug && (facing === "right" || facing === "left")) {
+    // A rug turned long ways: the same picture, spun a quarter turn.
+    ctx.translate(box.left + box.width / 2, box.top + box.height / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(picture, -box.height / 2, -box.width / 2, box.height, box.width);
+  } else if (flip) {
     ctx.translate(box.left + box.width, box.top);
     ctx.scale(-1, 1);
     ctx.drawImage(picture, 0, 0, box.width, box.height);
@@ -5558,10 +5571,12 @@ function drawFurnitureMenu(item, box, layout) {
   const buttons = [{ text: "Flip", onClick: () => { playSound("click"); change({ flip: !item.flip }); } }];
   // Turn: front, then its right side, then its back, then its left side, then the front again.
   // (Wall things and rugs are flat, so they can't turn.)
-  if (!kind.wall && !kind.rug) {
+  // Rugs just switch between sideways and long ways.
+  if (!kind.wall) {
     buttons.push({ text: "Turn", onClick: () => {
       playSound("click");
-      const next = FACINGS[(FACINGS.indexOf(itemFacing(item)) + 1) % FACINGS.length];
+      const next = kind.rug ? (itemFacing(item) === "front" ? "right" : "front")
+                            : FACINGS[(FACINGS.indexOf(itemFacing(item)) + 1) % FACINGS.length];
       change({ facing: next, turned: false });
     } });
   }
