@@ -4742,32 +4742,33 @@ const HOUSE_ART_SIZE = 1;
 // TO ADD A ROOM: add a line with a new id (one word, never change it later), and add a
 // door to it in HOUSE_DOORS.
 const HOUSE_ROOMS = [
-  { id: "living", name: "Living room", short: "Living", x: 0, y: 10, wide: 22, deep: 16 },
-  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 12, deep: 10 },
-  { id: "dining", name: "Dining room", short: "Dining", x: 12, y: 0, wide: 10, deep: 10 },
-  { id: "hall", name: "Hall", x: 22, y: 0, wide: 4, deep: 26 },
-  { id: "bedroom", name: "Bedroom", x: 26, y: 0, wide: 10, deep: 11 },
-  { id: "game", name: "Game room", short: "Games", x: 26, y: 11, wide: 10, deep: 9 },
-  { id: "passage", name: "Little hall", short: "", x: 26, y: 20, wide: 10, deep: 2 },
-  { id: "bathroom", name: "Bathroom", short: "Bath", x: 26, y: 22, wide: 6, deep: 4 },
-  { id: "laundry", name: "Laundry", short: "", x: 32, y: 22, wide: 4, deep: 4 },
-  { id: "patio", name: "Front porch", short: "Porch", x: 20, y: 26, wide: 8, deep: 4, outside: true },
+  { id: "living", name: "Living room", short: "Living", x: 0, y: 9, wide: 18, deep: 13 },
+  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 10, deep: 9 },
+  { id: "dining", name: "Dining room", short: "Dining", x: 10, y: 0, wide: 8, deep: 9 },
+  { id: "hall", name: "Hall", x: 18, y: 0, wide: 6, deep: 22 },
+  { id: "bedroom", name: "Bedroom", x: 24, y: 0, wide: 12, deep: 9 },
+  { id: "game", name: "Game room", short: "Games", x: 24, y: 9, wide: 12, deep: 6 },
+  { id: "passage", name: "Little hall", short: "", x: 24, y: 15, wide: 12, deep: 2 },
+  { id: "bathroom", name: "Bathroom", short: "Bath", x: 24, y: 17, wide: 8, deep: 5 },
+  { id: "laundry", name: "Laundry", short: "", x: 32, y: 17, wide: 4, deep: 5 },
+  { id: "patio", name: "Front porch", short: "Porch", x: 2, y: 22, wide: 22, deep: 5, outside: true },
 ];
 
 // The doors: which two rooms, and where the door is on the plan (in tiles, right on the
 // wall between them).
 const HOUSE_DOORS = [
-  ["kitchen", "dining", 12, 6.5],
-  ["kitchen", "living", 6, 10],
-  ["dining", "living", 17, 10],
-  ["dining", "hall", 22, 6.5],
-  ["living", "hall", 22, 19],
-  ["hall", "bedroom", 26, 7],
-  ["hall", "game", 26, 16.5],
-  ["hall", "passage", 26, 21],
-  ["passage", "bathroom", 29, 22],
-  ["passage", "laundry", 34, 22],
-  ["hall", "patio", 24, 26],
+  ["kitchen", "dining", 10, 5],
+  ["kitchen", "living", 5, 9],
+  ["dining", "living", 14, 9],
+  ["dining", "hall", 18, 5],
+  ["living", "hall", 18, 16],
+  ["hall", "bedroom", 24, 5],
+  ["hall", "game", 24, 12],
+  ["hall", "passage", 24, 16],
+  ["passage", "bathroom", 28, 17],
+  ["passage", "laundry", 34, 17],
+  ["hall", "patio", 21, 22],
+  ["living", "patio", 9, 22],
 ];
 const HOUSE_DOOR_SIZE = 2.6;     // how wide a doorway is, in tiles
 
@@ -5420,6 +5421,7 @@ function drawHouse(inside, time) {
     drawables.push({ depth: folkDepth(folk, layout, boxes), draw: () => drawFolk(folk, layout, boxes, time) });
   });
   drawables.sort((a, b) => a.depth - b.depth).forEach(thing => thing.draw());
+  drawChats(time);
 
   // Each room's name, and a pink line around the room you picked.
   HOUSE_ROOMS.forEach(room => drawRoomName(room, layouts[room.id]));
@@ -5998,12 +6000,137 @@ let folksLastTime = null;
 // How often they wander into another room: 1 = sometimes, bigger = more often.
 const ROOM_WANDER = 1;
 
+// How often you two are cute: go find each other, smooch, cuddle on the couch, and pet the
+// cats (and how often the cats come say hi). 0 = never, bigger = more often.
+const FOLK_LOVE = 2;
+
+// Little conversations you two have in the house. Whoever starts says the first line, then
+// you take turns. TO ADD ONE: add a line like ["first thing", "answer", "answer back"].
+const FOLK_CHATS = [
+  ["i love you", "i love you more"],
+  ["i love you more", "not possible", "very possible"],
+  ["hi cutie", "hi baby"],
+  ["miss me?", "always"],
+  ["you're so pretty", "stoppp", "it's true tho"],
+  ["wanna cuddle?", "always"],
+  ["you're my favorite", "no YOU'RE my favorite"],
+  ["mwah", "mwah mwah"],
+  ["movie night?", "yesss"],
+  ["did you feed the cats?", "they're lying again"],
+  ["i'm so lucky", "i'm luckier"],
+  ["come here", "ok :)"],
+];
+const CHAT_LINE_SECONDS = 2.2;    // how long each speech bubble stays up
+
+// Starts a little conversation: "folk" says the first line, then "other" answers, and so on.
+function startChat(folk, other) {
+  folk.chat = { lines: FOLK_CHATS[Math.floor(Math.random() * FOLK_CHATS.length)], with: other.info.id, seconds: 0 };
+  return folk.chat.lines.length * CHAT_LINE_SECONDS;
+}
+
+// The speech bubbles, over whoever is talking right now (drawn on top of everything).
+function drawChats(time) {
+  state.folks.forEach(folk => {
+    if (!folk.chat || folk.drawnTop === undefined) return;
+    const line = Math.floor(folk.chat.seconds / CHAT_LINE_SECONDS);
+    if (line >= folk.chat.lines.length) return;
+    const other = folkById(folk.chat.with);
+    const talker = line % 2 === 0 ? folk : other;
+    if (!talker || talker.drawnTop === undefined) return;
+    const text = folk.chat.lines[line];
+    ctx.font = FONTS.small;
+    const half = ctx.measureText(text).width / 2 + 5;
+    const x = keepBetween(talker.drawnX, houseLayout.space.left + half + 2, houseLayout.space.right - half - 2);
+    const bottom = talker.drawnTop - 6;
+    // (It pops in at the start of each line.)
+    const pop = Math.min(1, (folk.chat.seconds % CHAT_LINE_SECONDS) * 6);
+    ctx.globalAlpha = pop;
+    steppedBox(x - half, bottom - 15, x + half, bottom, 2, COLORS.white, COLORS.text, 1);
+    ctx.fillStyle = COLORS.white;                             // the little tail
+    ctx.fillRect(talker.drawnX - 2, bottom - 1, 4, 3);
+    ctx.fillStyle = COLORS.text;
+    ctx.fillRect(talker.drawnX - 1, bottom + 2, 2, 2);
+    write(text, x, bottom - 7, FONTS.small, COLORS.text);
+    ctx.globalAlpha = 1;
+  });
+}
+
+function folkById(id) {
+  return state.folks.find(folk => folk.info.id === id);
+}
+
+// Is this one just standing (or sitting, for a cat) around, free to be smooched or petted?
+function folkIsFree(folk) {
+  return !folk.with && !folk.leaving && !folk.goal && (folk.doing === "stand" || folk.doing === "sit");
+}
+
+// The first door to walk through to get from one room to another (the shortest way).
+function doorToward(from, to) {
+  const firstDoor = { [from]: null };
+  const rooms = [from];
+  while (rooms.length) {
+    const id = rooms.shift();
+    if (id === to) return firstDoor[id];
+    roomById(id).doors.forEach(door => {
+      if (door.to in firstDoor) return;
+      firstDoor[door.to] = firstDoor[id] || door;
+      rooms.push(door.to);
+    });
+  }
+  return null;
+}
+
+// Are they still on their way to the one they're going to see? (Not if that one left the
+// room, or got up and walked off.)
+function stillMeeting(folk) {
+  const other = folkById(folk.with.id);
+  if (!other || other.room !== folk.room) return false;
+  return folk.with.kind === "visit" ? other.doing !== "walk" : other.doing === "wait";
+}
+
+// They made it over to the one they were going to see: smooch, pet, or (a cat) sit and purr.
+function startTogether(folk) {
+  const other = folkById(folk.with.id);
+  const kind = folk.with.kind;
+  if (!stillMeeting(folk)) {
+    folk.with = null;
+    folk.doing = folk.info.person ? "stand" : "sit";
+    folk.timer = 1;
+    return;
+  }
+  if (kind === "visit") {
+    // A cat sitting by your feet.
+    folk.doing = "purr";
+    folk.timer = folk.together = 5;
+    return;
+  }
+  const seconds = kind === "chat" ? startChat(folk, other) : kind === "smooch" ? 4 : 3.5;
+  folk.doing = kind;                                    // "smooch", "chat", or "pet"
+  folk.timer = folk.together = seconds;
+  folk.facing = folk.x < other.x ? "right" : "left";
+  other.doing = kind === "pet" ? "purr" : kind;
+  other.timer = other.together = seconds;
+  other.facing = folk.x < other.x ? "left" : "right";
+  other.with = { id: folk.info.id, kind: "partner" };
+}
+
+// Little hearts floating up from a spot (and fading away).
+function drawLoveHearts(x, top, time, count) {
+  for (let number = 0; number < count; number++) {
+    const rise = (time / 1500 + number / count) % 1;
+    ctx.globalAlpha = 1 - rise;
+    drawPixels(HEART, Math.round(x - 3.5 + Math.sin(rise * 6 + number * 2) * 3), Math.round(top - 6 - rise * 16), 1, COLORS.heart);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function makeFolks() {
   return FOLKS.map((info, number) => ({
     info, x: 0.2 + number * 0.2, y: 0.55 + (number % 2) * 0.25, facing: "down",
     // Which room they're in. They start spread out, so no room is empty.
     room: HOUSE_ROOMS[number % HOUSE_ROOMS.length].id,
     leaving: null,  // the door they're walking out of, into the room next door
+    with: null,     // who they're going to see or are with: { id, kind } (see FOLK_LOVE)
     doing: info.person ? "stand" : "sit", timer: 1 + number * 1.5, target: null, goal: null, petted: 0,
   }));
 }
@@ -6023,12 +6150,32 @@ function updateFolks(layouts, placed, boxes, time) {
   state.folks.forEach(folk => {
     const layout = layouts[folk.room] || layouts[HOUSE_ROOMS[0].id];     // the room they're in
     folk.petted = Math.max(0, folk.petted - seconds);
+    // Talking: on to the next line (and done after the last one).
+    if (folk.chat) {
+      folk.chat.seconds += seconds;
+      if (folk.chat.seconds > folk.chat.lines.length * CHAT_LINE_SECONDS) folk.chat = null;
+    }
+    // Cuddled up on the same couch or bed? Every now and then, a little chat.
+    if (!folk.chat && folk.doing === "using" && !folk.goal.nap && folk.info.person) {
+      const partner = state.folks.find(other => other !== folk && other.info.person);
+      if (partner.doing === "using" && partner.goal.itemId === folk.goal.itemId && !partner.chat &&
+          Math.random() < seconds * 0.06 * FOLK_LOVE) {
+        startChat(folk, partner);
+      }
+    }
     // The furniture they were using got moved, put away, or taken to another room? They get up.
     const using = folk.goal && byId[folk.goal.itemId];
     if (folk.goal && (!using || itemRoom(using) !== folk.room || (houseDrag && houseDrag.item.id === folk.goal.itemId))) {
       folk.goal = null;
       folk.doing = folk.info.person ? "stand" : "sit";
       folk.timer = 1.5;
+    }
+
+    // On the way to see someone who wandered off? Never mind.
+    if (folk.doing === "walk" && folk.with && !stillMeeting(folk)) {
+      folk.with = null;
+      folk.doing = folk.info.person ? "stand" : "sit";
+      folk.timer = 1;
     }
 
     if (folk.doing === "walk") {
@@ -6051,6 +6198,10 @@ function updateFolks(layouts, placed, boxes, time) {
           folk.y = outside.y;
           folk.target = door ? doorSpot(door, "inside") : { x: 0.5, y: 0.7 };
           folk.leaving = null;
+          return;
+        }
+        if (folk.with) {
+          startTogether(folk);
           return;
         }
         if (folk.goal) {
@@ -6085,6 +6236,7 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     return;
   }
   folk.goal = null;
+  folk.with = null;
   folk.facing = "down";
 
   const choices = ["walk", "walk", isCat ? "sit" : "stand"];
@@ -6101,6 +6253,34 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     }
   });
   if (isCat) choices.push("nap");
+
+  // Being cute (see FOLK_LOVE).
+  const others = state.folks.filter(other => other !== folk);
+  const partner = folk.info.person && others.find(other => other.info.person);
+  for (let time = 0; time < FOLK_LOVE; time++) {
+    if (partner) {
+      // Go find each other, or smooch if you're in the same room.
+      if (partner.room !== folk.room) choices.push("find");
+      else if (folkIsFree(partner)) {
+        choices.push({ meet: partner, kind: "smooch" });
+        choices.push({ meet: partner, kind: "chat" });
+      }
+      // Cuddle up: sit on the same couch (or bed) the other one is on.
+      if (partner.room === folk.room && partner.doing === "using" && !partner.goal.nap) {
+        const item = placed.find(other => other.id === partner.goal.itemId);
+        for (let spot = 0; item && SEATS[item.type] && spot < seatCount(item); spot++) {
+          if (!spotTaken(item.id, spot, folk)) choices.push({ itemId: item.id, spot });
+        }
+      }
+      // Pet a cat.
+      others.filter(other => !other.info.person && other.room === folk.room && folkIsFree(other))
+        .forEach(cat => choices.push({ meet: cat, kind: "pet" }));
+    } else if (isCat) {
+      // Go sit by one of you.
+      others.filter(other => other.info.person && other.room === folk.room && other.doing === "stand" && !other.with)
+        .forEach(person => choices.push({ meet: person, kind: "visit" }));
+    }
+  }
   const choice = choices[Math.floor(Math.random() * choices.length)];
 
   if (choice === "walk") {
@@ -6112,6 +6292,27 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     folk.doing = "walk";
     folk.leaving = doors[Math.floor(Math.random() * doors.length)];
     folk.target = doorSpot(folk.leaving, "outside");
+  } else if (choice === "find") {
+    // Head toward the room the other one is in (one door at a time).
+    const door = doorToward(folk.room, partner.room);
+    folk.doing = "walk";
+    folk.leaving = door;
+    folk.target = door ? doorSpot(door, "outside") : { x: 0.5, y: 0.7 };
+  } else if (choice.meet) {
+    // Walk over next to them. (They wait for you, unless you're a cat coming to say hi.)
+    const other = choice.meet;
+    const gap = (choice.kind === "smooch" ? 26 : 30) * layout.art / layout.roomWidth;
+    const side = folk.x < other.x ? -1 : 1;
+    let x = other.x + side * gap;
+    if (x < 0.04 || x > 0.96) x = other.x - side * gap;
+    folk.doing = "walk";
+    folk.target = { x: keepBetween(x, 0.03, 0.97), y: other.y };
+    folk.with = { id: other.info.id, kind: choice.kind };
+    if (choice.kind !== "visit") {
+      other.doing = "wait";
+      other.timer = 8;
+      other.with = { id: folk.info.id, kind: "waiting" };
+    }
   } else if (typeof choice === "string") {
     folk.doing = choice;                // "stand", "sit", or "nap" (right on the floor)
     folk.timer = choice === "nap" ? between(8, 18, Math.random()) : between(2, 5, Math.random());
@@ -6181,7 +6382,8 @@ function drawFolk(folk, layout, boxes, time) {
     else if (folk.doing === "stretch") { row = CAT_ROWS.lie; column = 3; }
     else { row = CAT_ROWS.sit; column = (time + folk.info.cat * 1300) % 3500 < 180 ? 1 : 0; }   // blinks
   } else {
-    row = PERSON_ROWS.down;
+    // Standing. (Smooching or petting a cat? Then facing them.)
+    row = PERSON_ROWS[["smooch", "chat", "pet"].includes(folk.doing) ? folk.facing : "down"];
     column = 0;
   }
 
@@ -6189,6 +6391,32 @@ function drawFolk(folk, layout, boxes, time) {
   // No cat pictures yet? The little pixel cat instead.
   if (!drawn && isCat) drawn = drawPixelCat(CATS[folk.info.cat], folk.doing === "walk" && Math.floor(time / 200) % 2, folk.facing === "left", x, bottom, height * 0.5);
   if (!drawn) return;
+  // (Where they are, for speech bubbles.)
+  folk.drawnX = x;
+  folk.drawnTop = drawn.top;
+
+  // Being cute: hearts (and a "mwah!") over smooches, purring cats, and cuddles.
+  if (folk.doing === "smooch" && folk.facing === "right" && folk.with) {
+    const other = folkById(folk.with.id);
+    const middle = (x + layout.left + other.x * layout.roomWidth) / 2;
+    drawLoveHearts(middle, drawn.top, time, 3);
+    if (folk.timer > folk.together - 1.4) {
+      ctx.font = FONTS.small;
+      const half = ctx.measureText("mwah!").width / 2 + 4;
+      steppedBox(middle - half, drawn.top - 30, middle + half, drawn.top - 16, 2, COLORS.white, COLORS.text, 1);
+      write("mwah!", middle, drawn.top - 22.5, FONTS.small, COLORS.text);
+    }
+  }
+  if (folk.doing === "purr") drawLoveHearts(x, drawn.top, time, 2);
+  if (folk.doing === "using" && !folk.goal.nap && folk.info.person) {
+    const partner = state.folks.find(other => other !== folk && other.info.person);
+    const item = state.house.items.find(other => other.id === folk.goal.itemId);
+    if (partner.doing === "using" && partner.goal.itemId === folk.goal.itemId && folk.goal.spot < partner.goal.spot) {
+      const box = boxes[folk.goal.itemId];
+      const middle = box.left + box.width * (seatSpot(item, folk.goal.spot).across + seatSpot(item, partner.goal.spot).across) / 2;
+      drawLoveHearts(middle, drawn.top, time * 0.6, 2);
+    }
+  }
 
   // Clicking them: a heart (and a meow from the cats).
   hitBoxes.push({ left: drawn.left, top: drawn.top, right: drawn.left + drawn.width, bottom: drawn.top + drawn.height,
