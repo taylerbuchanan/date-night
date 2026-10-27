@@ -1334,6 +1334,14 @@ function togglePowerMenu() {
 // How big a window is (when it's not full screen).
 const WINDOW_WIDTH = 342;
 const WINDOW_HEIGHT = 238;
+// Windows that are a different size from the rest. The IM is narrow and tall, so it fits
+// on the side of the screen next to other windows (it opens on the right).
+const WINDOW_SIZES = {
+  im: { width: 196, height: 292 },
+};
+function windowSize(win) {
+  return WINDOW_SIZES[win.window] || { width: WINDOW_WIDTH, height: WINDOW_HEIGHT };
+}
 
 const WINDOW_TITLES = {
   notes: "love_note.txt - Notepad", memories: "Memories", games: "Arcade",
@@ -1401,7 +1409,8 @@ function topWindow() {
 // Where a window is: its own spot, or the whole computer screen (above the taskbar) if full screen.
 function windowBoxOf(win) {
   if (win.maximized) return { left: SCREEN.left, top: SCREEN.top, right: SCREEN.right, bottom: TASKBAR.top };
-  return { left: win.x, top: win.y, right: win.x + WINDOW_WIDTH, bottom: win.y + WINDOW_HEIGHT };
+  const { width, height } = windowSize(win);
+  return { left: win.x, top: win.y, right: win.x + width, bottom: win.y + height };
 }
 
 // The top window that the mouse is over (for scrolling), or null.
@@ -1462,7 +1471,7 @@ let dragging = null;   // { win, dx, dy } while a window is being dragged
 
 // Where the loaded window is right now.
 function windowBox() {
-  return loadedWindow ? windowBoxOf({ ...loadedWindow, maximized: state.maximized })
+  return loadedWindow ? windowBoxOf({ ...loadedWindow, window: state.window, maximized: state.maximized })
                       : windowBoxOf({ x: 250, y: 82, maximized: state.maximized });
 }
 
@@ -7283,8 +7292,8 @@ function openWindow(name) {
     game: name.startsWith("game:") ? { key: name.slice(5), playing: false, over: false } : null,
     // "Open when..." and the Arcade start full screen (he can shrink them with the button).
     maximized: name === "openwhen" || name === "games" || name === "house" || name === "datenight",
-    x: 200 + step * 20,
-    y: 64 + step * 10,
+    x: WINDOW_SIZES[name] ? SCREEN.right - WINDOW_SIZES[name].width - 6 : 200 + step * 20,
+    y: WINDOW_SIZES[name] ? SCREEN.top + 4 : 64 + step * 10,
     minimized: false,
   };
   state.windows.push(win);
