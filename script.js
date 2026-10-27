@@ -6162,6 +6162,16 @@ function startChat(folk, other, chats = FOLK_CHATS) {
 
 // The speech bubbles, over whoever is talking right now (drawn on top of everything).
 function drawChats(time) {
+  // Jacob bringing flowers: the bouquet, held out between them, and hearts.
+  state.folks.forEach(folk => {
+    if (folk.doing !== "flowers" || folk.info.id !== "jacob" || !folk.with || folk.drawnTop === undefined) return;
+    const other = folkById(folk.with.id);
+    if (!other || other.drawnX === undefined) return;
+    const middle = (folk.drawnX + other.drawnX) / 2;
+    const size = Math.max(1, 4.5 * folk.drawnArt);
+    drawSpriteScaled(BOUQUET, BOUQUET_COLORS, middle - 2.5 * size, folk.drawnTop + folk.drawnHeight * 0.45 - 3.5 * size, size);
+    drawLoveHearts(middle, folk.drawnTop, time, 2);
+  });
   state.folks.forEach(folk => {
     if (!folk.chat || folk.drawnTop === undefined) return;
     const line = Math.floor(folk.chat.seconds / CHAT_LINE_SECONDS);
@@ -6439,7 +6449,7 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
     // Walk over next to them. (They wait for you, unless you're a cat coming to say hi.)
     const other = choice.meet;
     // (How far apart they stand: close for a smooch, a little further for talking.)
-    const gap = { smooch: 30, chat: 44, flowers: 44, pet: 34, visit: 30 }[choice.kind] * layout.art / layout.roomWidth;
+    const gap = { smooch: 40, chat: 62, flowers: 62, pet: 42, visit: 34 }[choice.kind] * layout.art / layout.roomWidth;
     const side = folk.x < other.x ? -1 : 1;
     let x = other.x + side * gap;
     if (x < 0.04 || x > 0.96) x = other.x - side * gap;
@@ -6546,14 +6556,9 @@ function drawFolk(folk, layout, boxes, time) {
     }
   }
   if (folk.doing === "purr") drawLoveHearts(x, drawn.top, time, 2);
-  if (folk.doing === "flowers" && folk.info.id === "jacob" && folk.with) {
-    // The bouquet, held out between them.
-    const other = folkById(folk.with.id);
-    const middle = (x + layout.left + other.x * layout.roomWidth) / 2;
-    const size = Math.max(1, 4.5 * layout.art);
-    drawSpriteScaled(BOUQUET, BOUQUET_COLORS, middle - 2.5 * size, drawn.top + drawn.height * 0.42 - 3.5 * size, size);
-    drawLoveHearts(middle, drawn.top, time, 2);
-  }
+  // (The bouquet is drawn in drawChats, on top of everyone.)
+  folk.drawnHeight = drawn.height;
+  folk.drawnArt = layout.art;
   if (folk.doing === "using" && !folk.goal.nap && folk.info.person) {
     const partner = state.folks.find(other => other !== folk && other.info.person);
     const item = state.house.items.find(other => other.id === folk.goal.itemId);
