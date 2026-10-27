@@ -6297,13 +6297,20 @@ function listenForGames(failed) {
   }, failed);
 }
 
-// A pop-up (once) when the other person makes a move or answers the quiz.
+// Is this game open on the screen right now (not tucked away in the taskbar)?
+function gameIsOpen(key) {
+  return state.windows.some(win => !win.minimized && win.game && win.game.key === key);
+}
+
+// A pop-up (once) when the other person makes a move or answers the quiz. (Not if you're
+// already looking at that game: you'll see the move there.)
 function checkForGameNews() {
   Object.entries(state.matches).forEach(([kind, match]) => {
     if (match.lastMoveBy !== OTHER || !match.updatedAt) return;
     const seen = `${SIDE}:gamenews:${kind}:${match.updatedAt.seconds}`;
     if (remembers(seen)) return;
     remember(seen);
+    if (gameIsOpen(kind)) return;
     const title = TURN_GAMES[kind] ? TURN_GAMES[kind].title : kind;
     if (match.winner === OTHER) notify("GAME OVER", `${OTHER} won ${title}! Rematch?`);
     else if (match.winner === "draw") notify("GAME OVER", `${title} ended in a tie!`);
@@ -6314,7 +6321,7 @@ function checkForGameNews() {
     const seen = `${SIDE}:quiznews:${quiz.round}`;
     if (!remembers(seen)) {
       remember(seen);
-      notify("COUPLES QUIZ", quiz[`answers${ME}`] ? `${OTHER} finished the quiz! See how you matched in the Arcade.`
+      if (!gameIsOpen("quiz")) notify("COUPLES QUIZ", quiz[`answers${ME}`] ? `${OTHER} finished the quiz! See how you matched in the Arcade.`
                                                     : `${OTHER} answered the couples quiz! Your turn, in the Arcade.`);
     }
   }
