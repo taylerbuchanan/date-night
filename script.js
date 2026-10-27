@@ -5657,7 +5657,7 @@ const POSES = {
 };
 // How big they're drawn, compared to standing up: sitting pictures by height, lying-down
 // pictures by width.
-const SIT_SIZE = 0.62, LIE_SIZE = 0.85;
+const SIT_SIZE = 0.78, LIE_SIZE = 0.85;
 const POSE_PICTURES = {};
 function posePicture(who, pose) {
   const name = `${who}-${POSES[pose]}`;
