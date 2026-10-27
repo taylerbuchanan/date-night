@@ -5041,6 +5041,36 @@ function areaAt(x, y) {
 // gap that's too small). They find the shortest way through the open squares.
 const PATH_STEP = 6;        // how big each little square is, in picture pixels
 const PATH_ROOM = 9;        // how much room they need around their feet, in picture pixels
+// How much room they need ABOVE their feet (behind them), in picture pixels. Their head is
+// drawn up there, so without this, standing right under a wall looks like standing on it.
+const HEAD_ROOM = 30;
+// The floor of each room and doorway (no furniture), from Codex's notes:
+// [left, top, right, bottom] in picture pixels. Only walls count for HEAD_ROOM, not furniture
+// (it's fine to stand in front of a couch).
+const HOUSE_FLOORS = [
+  [49,70,457,437],
+  [485,76,635,325],
+  [648,76,773,325],
+  [474,367,777,434],
+  [797,72,1206,436],
+  [49,467,695,944],
+  [503,430,652,525],
+  [725,466,1206,715],
+  [723,744,1206,997],
+  [265,982,677,1135],
+  [504,1133,668,1212],
+  [454,372,491,416],
+  [535,322,579,369],
+  [690,322,734,369],
+  [774,378,801,424],
+  [692,782,729,830],
+  [782,712,823,748],
+  [1065,712,1103,748],
+  [531,940,652,990],
+];
+function onFloor(x, y) {
+  return HOUSE_FLOORS.some(([left, top, right, bottom]) => x >= left && x <= right && y >= top && y <= bottom);
+}
 let pathGrid = null;        // the squares (worked out once the walking map loads)
 
 function buildWalkGrid() {
@@ -5061,7 +5091,8 @@ function buildWalkGrid() {
     for (let column = 0; column < columns; column++) {
       const x = (column + 0.5) * PATH_STEP, y = (row + 0.5) * PATH_STEP;
       const extra = HOUSE_EXTRA_WALKWAYS.some(([left, top, right, bottom]) => x > left && x < right && y > top && y < bottom);
-      open[row * columns + column] = extra || around.every(([dx, dy]) => white(x + dx * PATH_ROOM, y + dy * PATH_ROOM)) ? 1 : 0;
+      open[row * columns + column] = extra || (around.every(([dx, dy]) => white(x + dx * PATH_ROOM, y + dy * PATH_ROOM)) &&
+                                               onFloor(x, y - HEAD_ROOM)) ? 1 : 0;
     }
   }
   // Close off any little bits of floor you can't get to from the living room (like the gap
@@ -5230,7 +5261,7 @@ const FOLKS = [
 const FOLK_STARTS = [[300, 900], [560, 820], [600, 780], [250, 380]];
 
 // How often they wander into another room: 1 = sometimes, bigger = more often.
-const ROOM_WANDER = 1;
+const ROOM_WANDER = 3;
 
 // How often you two are cute: go find each other, smooch, chat, cuddle, bring flowers,
 // and pet the cats (and how often the cats come say hi). 0 = never, bigger = more often.
@@ -5461,8 +5492,13 @@ function chooseWhatToDo(folk) {
     const other = choice.meet;
     // (How far apart they stand, in picture pixels: close for a smooch, further for talking.)
     const gap = { smooch: 26, chat: 40, flowers: 40, pet: 28, visit: 22 }[choice.kind];
+    // Stand on whichever side of them is open floor with nothing (like a wall) in between.
     const side = folk.x < other.x ? -1 : 1;
-    if (!walkTo(folk, { x: other.x + side * gap, y: other.y })) { giveUp(); return; }
+    const there = [side, -side].map(way => ({ x: other.x + way * gap, y: other.y })).find(spot => {
+      const square = pathSquare(spot.x, spot.y);
+      return squareOpen(square.column, square.row) && clearLine(spot, other);
+    });
+    if (!there || !walkTo(folk, there)) { giveUp(); return; }
     folk.with = { id: other.info.id, kind: choice.kind };
     if (choice.kind !== "visit") {
       other.doing = "wait";
@@ -5660,12 +5696,14 @@ function drawPose(who, pose, x, bottom, size, byWidth, mirrored) {
 
 // Little conversations you two have in the house. Whoever starts says the first line, then
 // you take turns. TO ADD ONE: add a line like ["first thing", "answer", "answer back"].
+// To have only one of you start it, put their name first, like ["jacob", "first thing", ...].
 const FOLK_CHATS = [
   ["i love you", "i love you more"],
   ["i love you more", "not possible", "very possible"],
   ["hi cutie", "hi baby"],
   ["miss me?", "always"],
-  ["you're so pretty", "stoppp", "it's true tho"],
+  ["jacob", "you're so pretty", "stoppp", "it's true tho"],
+  ["tayler", "you're so handsome", "stoppp", "it's true tho"],
   ["wanna cuddle?", "always"],
   ["you're my favorite", "no YOU'RE my favorite"],
   ["mwah", "mwah mwah"],
@@ -5698,7 +5736,11 @@ const BOUQUET_COLORS = { P: "#F8A5BE", R: "#E05A6B", Y: "#FFE08A", g: "#5E9E5A",
 
 // Starts a little conversation: "folk" says the first line, then "other" answers, and so on.
 function startChat(folk, other, chats = FOLK_CHATS) {
-  folk.chat = { lines: chats[Math.floor(Math.random() * chats.length)], with: other.info.id, seconds: 0 };
+  // (Only the chats this one can start: ones with no name, or with their name first.)
+  const names = FOLKS.map(info => info.id);
+  const mine = chats.filter(lines => !names.includes(lines[0]) || lines[0] === folk.info.id);
+  const lines = mine[Math.floor(Math.random() * mine.length)];
+  folk.chat = { lines: names.includes(lines[0]) ? lines.slice(1) : lines, with: other.info.id, seconds: 0 };
   return folk.chat.lines.length * CHAT_LINE_SECONDS;
 }
 
