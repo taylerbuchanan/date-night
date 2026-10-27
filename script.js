@@ -4729,28 +4729,76 @@ const HOUSE_SIDEBAR = 118;     // how wide the shop is
 // How big the furniture pictures are drawn. Bigger number = bigger furniture.
 const HOUSE_ART_SIZE = 1;
 
-// The rooms, in order from left to right (like they're next to each other). The arrows
-// go between them, and you two and the cats wander from one room into the next.
-// TO ADD A ROOM: add a line with a new id (one word, never change it later), a name, and
-// how wide it is (1 = the whole window, 0.5 = half). Small rooms like the bathroom are
-// narrower, and you can see a bit of the rooms next door on each side.
-// "outside" means it has no roof (it's drawn green on the little house map).
+// The rooms, laid out like a real floor plan (the Map button shows it). Everything is
+// measured in squares ("tiles"). A person is about 4 or 5 tiles tall.
+//   x, y  - the room's top left corner on the plan (y goes from the back of the house
+//           to the front)
+//   wide  - how wide it is, left to right
+//   deep  - how deep it is, from its back wall to the front
+//   short - a shorter name for the map (if the room is too small for the whole name)
+//   doors - the rooms it opens into, and where each door is:
+//             side: "back" (in the back wall), "front" (toward you), "left", or "right"
+//             at:   how far along that side, from 0 to 1 (left to right for back/front,
+//                   back to front for left/right)
+// You always look into a room from the front, like a dollhouse with the front wall off.
+// The living room is the biggest, so it fills the window, and smaller rooms look smaller.
+// TO ADD A ROOM: add a line with a new id (one word, never change it later), and add a
+// door to it from a room next to it (and one back).
 const HOUSE_ROOMS = [
-  { id: "living", name: "Living room", width: 1 },
-  { id: "kitchen", name: "Kitchen", width: 0.85 },
-  { id: "bedroom", name: "Bedroom", width: 0.85 },
-  { id: "bathroom", name: "Bathroom", width: 0.55 },
-  { id: "game", name: "Game room", width: 0.8 },
-  { id: "laundry", name: "Laundry", width: 0.5 },
-  { id: "patio", name: "Patio", width: 0.75, outside: true },
+  { id: "living", name: "Living room", short: "Living", x: 0, y: 10, wide: 22, deep: 16, doors: [
+    { to: "kitchen", side: "back", at: 0.27 }, { to: "dining", side: "back", at: 0.77 }, { to: "hall", side: "right", at: 0.5 },
+  ] },
+  { id: "kitchen", name: "Kitchen", x: 0, y: 0, wide: 12, deep: 10, doors: [
+    { to: "dining", side: "right", at: 0.5 }, { to: "living", side: "front", at: 0.5 },
+  ] },
+  { id: "dining", name: "Dining room", short: "Dining", x: 12, y: 0, wide: 10, deep: 10, doors: [
+    { to: "kitchen", side: "left", at: 0.5 }, { to: "living", side: "front", at: 0.5 }, { to: "hall", side: "right", at: 0.5 },
+  ] },
+  { id: "hall", name: "Hall", x: 22, y: 0, wide: 4, deep: 26, doors: [
+    { to: "dining", side: "left", at: 0.2 }, { to: "living", side: "left", at: 0.7 },
+    { to: "bedroom", side: "right", at: 0.15 }, { to: "game", side: "right", at: 0.45 },
+    { to: "bathroom", side: "right", at: 0.72 }, { to: "laundry", side: "right", at: 0.9 },
+    { to: "patio", side: "front", at: 0.5 },
+  ] },
+  { id: "bedroom", name: "Bedroom", x: 26, y: 0, wide: 10, deep: 11, doors: [{ to: "hall", side: "left", at: 0.5 }] },
+  { id: "game", name: "Game room", short: "Games", x: 26, y: 11, wide: 10, deep: 9, doors: [{ to: "hall", side: "left", at: 0.5 }] },
+  { id: "bathroom", name: "Bathroom", short: "Bath", x: 26, y: 20, wide: 6, deep: 6, doors: [{ to: "hall", side: "left", at: 0.5 }] },
+  { id: "laundry", name: "Laundry", short: "W", x: 32, y: 20, wide: 4, deep: 6, doors: [{ to: "hall", side: "back", at: 0.5 }] },
+  { id: "patio", name: "Front porch", short: "Porch", x: 19, y: 26, wide: 10, deep: 5, outside: true, doors: [
+    { to: "hall", side: "back", at: 0.5 },
+  ] },
 ];
+// How big the biggest room is, in tiles. A room this wide fills the window.
+const HOUSE_WIDEST = 22, HOUSE_DEEPEST = 16;
 state.houseRoom = 0;    // which room you're looking at (0 = the first one)
 state.shopPage = 0;     // which page of the shop is showing (see SHOP_PAGES)
 state.houseShopHidden = false;   // is the shop tucked away (to see the whole room)?
+state.houseMapOpen = false;      // is the map of the whole house showing?
+state.houseSelected = null;      // the piece of furniture you clicked on (it gets a little menu)
 
 // The room you're looking at.
 function currentRoomId() {
   return HOUSE_ROOMS[state.houseRoom].id;
+}
+
+function roomById(id) {
+  return HOUSE_ROOMS.find(room => room.id === id) || HOUSE_ROOMS[0];
+}
+
+// The door in room "id" that goes to room "to" (or nothing, if they aren't next to each other).
+function doorBetween(id, to) {
+  return roomById(id).doors.find(door => door.to === to);
+}
+
+// A spot by a door: "outside" is just past it (where you walk out), "inside" is a few
+// steps into the room. The spot is { x, y }, both 0 to 1, like furniture spots.
+function doorSpot(door, which) {
+  const out = which === "outside";
+  const at = keepBetween(door.at, 0.05, 0.95);
+  if (door.side === "left") return { x: out ? -0.08 : 0.15, y: at };
+  if (door.side === "right") return { x: out ? 1.08 : 0.85, y: at };
+  if (door.side === "back") return { x: at, y: out ? 0 : 0.25 };
+  return { x: at, y: out ? 1.1 : 0.8 };                       // the front
 }
 
 // Which room a piece of furniture is in. (Things from before there were rooms are in the
@@ -4835,9 +4883,9 @@ const FURNITURE = {
   counter: { name: "Counter", price: 40, shop: "kitchen", width: 72 },
   microwave: { name: "Microwave", price: 40, shop: "kitchen", width: 70 },
   island: { name: "Kitchen island", price: 50, shop: "kitchen", width: 80 },
-  diningtable: { name: "Table for two", price: 55, shop: "kitchen", width: 100 },
-  pinkchair: { name: "Pink chair", price: 20, shop: "kitchen", width: 40 },
-  bluechair: { name: "Blue chair", price: 20, shop: "kitchen", width: 40 },
+  diningtable: { name: "Table for two", price: 55, shop: "dining", width: 100 },
+  pinkchair: { name: "Pink chair", price: 20, shop: "dining", width: 40 },
+  bluechair: { name: "Blue chair", price: 20, shop: "dining", width: 40 },
   dishrack: { name: "Dish rack", price: 15, shop: "kitchen", width: 45 },
   coffeemaker: { name: "Coffee machine", price: 20, shop: "kitchen", width: 30 },
   wallcupboard: { name: "Wall cupboard", price: 40, shop: "kitchen", width: 70, wall: true },
@@ -4880,16 +4928,16 @@ const FURNITURE = {
   pegboard: { name: "Pegboard", price: 30, shop: "game", width: 80, wall: true },
   gameshelf: { name: "Game shelf", price: 35, shop: "game", width: 85, wall: true },
 
-  // Laundry and entry.
+  // Laundry, and the hall by the front door.
   washer: { name: "Washer", price: 55, shop: "laundry", width: 65 },
   dryer: { name: "Dryer", price: 55, shop: "laundry", width: 65 },
   utilitysink: { name: "Laundry sink", price: 45, shop: "laundry", width: 80 },
   ironingboard: { name: "Ironing board", price: 25, shop: "laundry", width: 85 },
-  entrybench: { name: "Shoe bench", price: 40, shop: "laundry", width: 110 },
-  coatstand: { name: "Coat stand", price: 30, shop: "laundry", width: 50 },
-  shoecabinet: { name: "Shoe cabinet", price: 40, shop: "laundry", width: 85 },
-  umbrellastand: { name: "Umbrella stand", price: 15, shop: "laundry", width: 30 },
-  keyshelf: { name: "Key shelf", price: 20, shop: "laundry", width: 70, wall: true },
+  entrybench: { name: "Shoe bench", price: 40, shop: "hall", width: 110 },
+  coatstand: { name: "Coat stand", price: 30, shop: "hall", width: 50 },
+  shoecabinet: { name: "Shoe cabinet", price: 40, shop: "hall", width: 85 },
+  umbrellastand: { name: "Umbrella stand", price: 15, shop: "hall", width: 30 },
+  keyshelf: { name: "Key shelf", price: 20, shop: "hall", width: 70, wall: true },
 
   // Patio.
   gardenbench: { name: "Garden bench", price: 50, shop: "patio", width: 120 },
@@ -4918,9 +4966,11 @@ const FURNITURE = {
 };
 
 // The pages of the shop, in order (the arrows at the top of the shop flip through them).
-// The shop opens to the page for the room you're in.
+// Each room with furniture to buy gets a page. (The shop's arrows and the room arrows
+// don't change each other.)
 const SHOP_PAGES = [
-  ...HOUSE_ROOMS.map(room => ({ id: room.id, name: room.name })),
+  ...HOUSE_ROOMS.filter(room => Object.values(FURNITURE).some(kind => kind.shop === room.id))
+    .map(room => ({ id: room.id, name: room.name })),
   { id: "cats", name: "For the cats" },
   { id: "looks", name: "Walls + floors" },
 ];
@@ -5135,10 +5185,55 @@ function drawSpriteScaled(rows, colors, x, y, px) {
   });
 }
 
-// Draws a furniture picture in a box (flipped means facing the other way).
-function drawFurniturePicture(type, box, flip) {
-  const picture = FURNITURE_PICTURES[type];
-  if (!picture.naturalWidth) return;
+// The back of a piece of furniture (for when it's turned to face the wall).
+// If there's a real picture of its back in images/furniture/back/<its name>.png, that's
+// used. If not, one is made from the front picture: the same shape, all in its main color
+// (so a couch's back is a plain couch-colored shape, with no pillows showing).
+const FURNITURE_BACKS = {};
+function backPicture(type) {
+  let back = FURNITURE_BACKS[type];
+  if (!back) {
+    back = FURNITURE_BACKS[type] = { real: new Image(), made: null };
+    back.real.onerror = () => { back.real = null; };          // no picture of its back
+    back.real.src = `images/furniture/back/${type}.png`;
+  }
+  if (back.real && back.real.naturalWidth) return back.real;
+  if (!back.made && FURNITURE_PICTURES[type].naturalWidth) back.made = makeBackPicture(FURNITURE_PICTURES[type]);
+  return back.made;
+}
+
+function makeBackPicture(picture) {
+  const back = document.createElement("canvas");
+  back.width = picture.naturalWidth;
+  back.height = picture.naturalHeight;
+  const paper = back.getContext("2d");
+  paper.drawImage(picture, 0, 0);
+  const pixels = paper.getImageData(0, 0, back.width, back.height);
+  const data = pixels.data;
+  // Its main color: the average of all the solid pixels.
+  let red = 0, green = 0, blue = 0, count = 0;
+  for (let spot = 0; spot < data.length; spot += 4) {
+    if (data[spot + 3] < 140) continue;
+    red += data[spot]; green += data[spot + 1]; blue += data[spot + 2]; count++;
+  }
+  if (!count) return back;
+  red /= count; green /= count; blue /= count;
+  // Every pixel becomes that color, a little lighter or darker depending on how light it
+  // was (so the outline and shadows still show).
+  for (let spot = 0; spot < data.length; spot += 4) {
+    const light = (data[spot] + data[spot + 1] + data[spot + 2]) / 765;
+    const shade = 0.55 + 0.45 * light;
+    data[spot] = red * shade; data[spot + 1] = green * shade; data[spot + 2] = blue * shade;
+  }
+  paper.putImageData(pixels, 0, 0);
+  return back;
+}
+
+// Draws a furniture picture in a box (flipped means facing the other way, and turned
+// means its back is to you).
+function drawFurniturePicture(type, box, flip, turned) {
+  const picture = (turned && backPicture(type)) || FURNITURE_PICTURES[type];
+  if (!(picture.naturalWidth || picture.width)) return;
   ctx.save();
   // These pictures are big and get shrunk down, so smoothing makes them look neat.
   ctx.imageSmoothingEnabled = true;
@@ -5213,31 +5308,35 @@ function drawHouse(inside, time) {
   }
   const house = state.house;
 
-  // The room fills everything left of the shop: wall on top, floor below.
-  // (With the shop hidden, the room gets the whole window.)
+  // The room goes in everything left of the shop. (With the shop hidden, the room gets the
+  // whole window.) Around it is plain space, so you can see how big the room is.
   const shopRoom = state.houseShopHidden ? 0 : HOUSE_SIDEBAR + 2;
   const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - shopRoom - 6, bottom: inside.bottom - 6 };
   const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
+  ctx.fillStyle = "#DCCFE6";
+  ctx.fillRect(space.left, space.top, space.right - space.left, space.bottom - space.top);
+  // Clicking the plain space (not on any furniture) closes the furniture menu.
+  hitBoxes.push({ ...space, right: space.right, bottom: space.bottom, onClick: () => { state.houseSelected = null; } });
+
   // Where every room goes on the screen (each room is its own size, see HOUSE_ROOMS).
   const layouts = {};
   HOUSE_ROOMS.forEach(other => { layouts[other.id] = roomLayout(other, space, sidebar); });
   const room = currentRoomId();
   const layout = houseLayout = layouts[room];
-  const { roomWidth, roomHeight, wallHeight } = layout;
+  const { roomWidth, roomHeight } = layout;
+  layout.arrows = [];
 
-  // The little map of the house, up in the window's title bar.
-  drawHouseMap();
-
-  // A smaller room has the rooms next door peeking in on each side.
-  drawNextDoor(house, layout);
-
-  // This room's wall and floor.
+  // The walls around the room (cut in half, like a dollhouse), then its wallpaper and floor.
+  drawRoomWalls(layout);
   drawWallAndFloor(house, room, layout.left, roomWidth, layout);
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(layout.left, layout.wallTop, roomWidth, roomHeight);
   ctx.clip();
+
+  // Doorways in the back wall (behind all the furniture).
+  roomById(room).doors.filter(door => door.side === "back").forEach(door => drawBackDoorway(house, door, layout));
 
   // Where each piece of furniture is this frame, in every room (you two and the cats use
   // furniture in the other rooms too). The one being dragged follows the mouse.
@@ -5270,12 +5369,22 @@ function drawHouse(inside, time) {
   ctx.strokeStyle = COLORS.text;
   ctx.lineWidth = 2;
   ctx.strokeRect(layout.left, layout.wallTop, roomWidth, roomHeight);
-  ctx.strokeRect(space.left, space.top, space.right - space.left, space.bottom - space.top);
 
-  drawRoomArrows(layout);
+  // The room's name, the signs to the rooms next door, and the furniture menu.
+  drawRoomName(layout);
+  roomById(room).doors.forEach(door => drawDoorSign(door, layout));
+  const selected = placed.find(item => item.id === state.houseSelected);
+  if (selected && !dragId) drawFurnitureMenu(selected, boxes[selected.id], layout);
+
+  // The map of the whole house (and the button that opens it).
+  if (state.houseMapOpen) drawHouseMap(house, space);
+  drawButton(space.left + 24, space.top + 14, 40, 20, state.houseMapOpen ? "Close" : "Map",
+             state.houseMapOpen ? COLORS.white : COLORS.acceptFill, state.houseMapOpen ? COLORS.text : COLORS.acceptText,
+             () => { playSound("click"); state.houseMapOpen = !state.houseMapOpen; state.houseSelected = null; });
+
   if (state.houseShopHidden) {
-    // A button in the room's top right corner to bring the shop back.
-    drawButton(layout.left + roomWidth - 34, layout.wallTop + 15, 56, 20, "Shop", COLORS.acceptFill, COLORS.acceptText,
+    // A button in the top right corner to bring the shop back.
+    drawButton(space.right - 32, space.top + 14, 56, 20, "Shop", COLORS.acceptFill, COLORS.acceptText,
                () => { playSound("click"); state.houseShopHidden = false; });
     layout.sidebar = { left: -1, top: -1, right: -1, bottom: -1 };    // (nothing to drop things on)
   } else {
@@ -5283,17 +5392,25 @@ function drawHouse(inside, time) {
   }
 }
 
-// Where one room goes on the screen: the same height as the others, but only as wide as
-// that room is (see HOUSE_ROOMS), in the middle.
+// Where one room goes on the screen. Every room uses the same size tiles, so a small room
+// really looks small: the living room (the biggest) fills the space, and the others sit in
+// the middle of it. Deeper rooms have more floor.
+const HOUSE_WALL_THICK = 7;    // how thick the cut-in-half walls around the room are
 function roomLayout(room, space, sidebar) {
-  const fullWidth = space.right - space.left, roomHeight = space.bottom - space.top;
-  const wallHeight = Math.round(roomHeight * HOUSE_WALL);
-  const roomWidth = Math.round(fullWidth * (room.width || 1));
+  const fullWidth = space.right - space.left - HOUSE_WALL_THICK * 2;
+  const fullHeight = space.bottom - space.top - HOUSE_WALL_THICK - 6;
+  const tile = fullWidth / HOUSE_WIDEST;                      // how wide one tile is on the screen
+  const wallHeight = Math.round(fullHeight * HOUSE_WALL);
+  // (Shallow rooms still get some floor, so there's room for furniture.)
+  const deep = Math.min(room.deep, HOUSE_DEEPEST) / HOUSE_DEEPEST;
+  const floorHeight = Math.round((fullHeight - wallHeight) * (0.4 + 0.6 * deep));
+  const roomWidth = Math.round(Math.min(room.wide, HOUSE_WIDEST) * tile);
+  const roomHeight = wallHeight + floorHeight;
+  const left = space.left + Math.round((space.right - space.left - roomWidth) / 2);
+  const wallTop = space.top + HOUSE_WALL_THICK + Math.round((fullHeight - roomHeight) / 2);
   return {
-    left: space.left + Math.round((fullWidth - roomWidth) / 2), wallTop: space.top, wallHeight,
-    floorTop: space.top + wallHeight, floorHeight: roomHeight - wallHeight, roomWidth, roomHeight, sidebar, space,
-    // How much the pictures are shrunk. It's the same in every room (it goes by the whole
-    // window), so a small room really looks small.
+    left, wallTop, wallHeight, floorTop: wallTop + wallHeight, floorHeight, roomWidth, roomHeight, sidebar, space,
+    // How much the pictures are shrunk. It's the same in every room.
     art: fullWidth / 560 * HOUSE_ART_SIZE,
     tile: fullWidth / 9,     // how big the wallpaper and floor patterns are
   };
@@ -5307,145 +5424,228 @@ function drawWallAndFloor(house, room, left, width, layout) {
   ctx.fillRect(left, layout.floorTop - 3, width, 4);
 }
 
-// On each side of a smaller room: a bit of the room next door (a little darker), with a
-// thick wall in between. Past the ends of the house, it's the yard.
-function drawNextDoor(house, layout) {
-  const { space } = layout;
-  [-1, 1].forEach(direction => {
-    const left = direction < 0 ? space.left : layout.left + layout.roomWidth;
-    const right = direction < 0 ? layout.left : space.right;
-    const width = right - left;
-    if (width < 2) return;                                    // this room fills the window
-    const next = HOUSE_ROOMS[state.houseRoom + direction];
-    if (next) {
-      drawWallAndFloor(house, next.id, left, width, layout);
-      ctx.fillStyle = "rgba(69, 40, 74, 0.28)";               // a little darker
-      ctx.fillRect(left, layout.wallTop, width, layout.roomHeight);
-    } else {
-      ctx.fillStyle = "#D6ECFE";                              // the sky
-      ctx.fillRect(left, layout.wallTop, width, layout.wallHeight);
-      ctx.fillStyle = "#A9D49A";                              // the grass
-      ctx.fillRect(left, layout.floorTop, width, layout.floorHeight);
-      ctx.fillStyle = "#8DBF7E";
-      ctx.fillRect(left, layout.floorTop, width, 3);
-    }
-    // The wall between the rooms (you're seeing it cut in half, like a dollhouse).
-    const wallLeft = direction < 0 ? right - 7 : left;
-    ctx.fillStyle = "#EFE2D2";
-    ctx.fillRect(wallLeft, layout.wallTop, 7, layout.roomHeight);
-    ctx.strokeStyle = COLORS.text;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(wallLeft, layout.wallTop, 7, layout.roomHeight);
-  });
-}
-
-// A tiny map of the whole house in the window's title bar: one box per room (as wide as
-// the room is) under a roof. The room you're in is pink. Click a box to go to that room.
-function drawHouseMap() {
-  const { left, right, top } = windowBox();
-  const total = HOUSE_ROOMS.reduce((sum, room) => sum + room.width, 0);
-  const mapWidth = Math.min(150, right - left - 250);
-  if (mapWidth < 60) return;                                  // the window's too small for it
-  const unit = mapWidth / total;
-  let x = Math.round((left + right) / 2 - mapWidth / 2);
-  const boxTop = top + 11, boxBottom = top + 19;
-
-  // The roof, over every room that's indoors.
-  const indoors = HOUSE_ROOMS.filter(room => !room.outside).reduce((sum, room) => sum + room.width, 0) * unit;
-  ctx.fillStyle = COLORS.cream;
+// The walls around the room, as if the house was cut in half: the ceiling on top, a wall
+// on each side, and the edge of the floor along the bottom. Side doors are gaps in the walls.
+function drawRoomWalls(layout) {
+  const thick = HOUSE_WALL_THICK, right = layout.left + layout.roomWidth, bottom = layout.wallTop + layout.roomHeight;
+  ctx.fillStyle = "#EFE2D2";
+  ctx.fillRect(layout.left - thick, layout.wallTop - thick, layout.roomWidth + thick * 2, layout.roomHeight + thick);
+  ctx.fillStyle = "#B07A52";                                  // the edge of the floor
+  ctx.fillRect(layout.left - thick, bottom, layout.roomWidth + thick * 2, 5);
   ctx.strokeStyle = COLORS.text;
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 3, boxTop);
-  ctx.lineTo(x + 10, top + 3);
-  ctx.lineTo(x + indoors - 10, top + 3);
-  ctx.lineTo(x + indoors + 3, boxTop);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  HOUSE_ROOMS.forEach((room, number) => {
-    const width = room.width * unit;
-    const box = { left: x, top: boxTop, right: x + width, bottom: boxBottom, id: `house:map:${number}`,
-                  onClick: () => { if (number !== state.houseRoom) goToRoom(number); } };
-    hitBoxes.push(box);
-    const here = number === state.houseRoom;
-    ctx.fillStyle = here ? COLORS.heart : state.hoverId === box.id ? COLORS.white : room.outside ? "#A9D49A" : COLORS.cream;
-    ctx.fillRect(box.left, box.top, width, boxBottom - boxTop);
-    ctx.strokeRect(box.left, box.top, width, boxBottom - boxTop);
-    x += width;
+  ctx.strokeRect(layout.left - thick, layout.wallTop - thick, layout.roomWidth + thick * 2, layout.roomHeight + thick + 5);
+  // The gaps for doors on the sides.
+  roomById(currentRoomId()).doors.filter(door => door.side === "left" || door.side === "right").forEach(door => {
+    const y = layout.floorTop + door.at * layout.floorHeight;
+    const x = door.side === "left" ? layout.left - thick : right;
+    ctx.fillStyle = "#9C6A44";
+    ctx.fillRect(x, y - 24, thick, 24);
   });
 }
 
-// The room's name at the top, and arrows on the sides to the rooms next door.
-function drawRoomArrows(layout) {
+// A doorway in the back wall, with a peek at the room behind it (a little darker).
+function drawBackDoorway(house, door, layout) {
+  const width = 58 * layout.art, height = Math.min(layout.wallHeight - 6, 135 * layout.art);
+  const middle = layout.left + door.at * layout.roomWidth;
+  const left = middle - width / 2, top = layout.floorTop - height;
+  const peek = { ...layout, wallTop: top, wallHeight: height * 0.7, floorTop: top + height * 0.7, floorHeight: height * 0.3 };
+  drawWallAndFloor(house, door.to, left, width, peek);
+  ctx.fillStyle = "rgba(69, 40, 74, 0.3)";
+  ctx.fillRect(left, top, width, height);
+  // The door frame.
+  ctx.strokeStyle = "#9C6A44";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(left - 2, top - 2, width + 4, height + 2);
+  // Clicking the doorway goes through it (and dropping furniture on it takes it there).
+  const box = { left, top, right: left + width, bottom: layout.floorTop, id: `house:door:${door.to}`, onClick: () => goToRoomId(door.to) };
+  hitBoxes.push(box);
+  layout.arrows.push({ to: door.to, box });
+}
+
+// A little sign by a door, with the room's name and an arrow pointing the way. Side signs
+// go out past the wall if there's space (or just inside the room if not). Clicking the
+// sign goes to that room, and dropping furniture on it takes the furniture there.
+function drawDoorSign(door, layout) {
+  const name = roomById(door.to).name;
+  ctx.font = FONTS.small;
+  const width = ctx.measureText(name).width + 22, height = 16;
+  const right = layout.left + layout.roomWidth, bottom = layout.wallTop + layout.roomHeight;
+  let x, y;                                                   // the middle of the sign
+  if (door.side === "left" || door.side === "right") {
+    y = layout.floorTop + door.at * layout.floorHeight - 12;
+    const room = door.side === "left" ? layout.left - layout.space.left : layout.space.right - right;
+    const outside = room - HOUSE_WALL_THICK - 4 >= width;
+    if (door.side === "left") x = outside ? layout.left - HOUSE_WALL_THICK - 3 - width / 2 : layout.left + 3 + width / 2;
+    else x = outside ? right + HOUSE_WALL_THICK + 3 + width / 2 : right - 3 - width / 2;
+  } else if (door.side === "back") {
+    x = layout.left + door.at * layout.roomWidth;
+    y = layout.floorTop - Math.min(layout.wallHeight - 6, 135 * layout.art) - 11;
+    y = Math.max(y, layout.wallTop + 10);
+  } else {
+    x = layout.left + door.at * layout.roomWidth;
+    const below = layout.space.bottom - bottom;
+    y = below >= height + 10 ? bottom + 6 + height / 2 + 2 : bottom - height / 2 - 4;
+  }
+  x = keepBetween(x, layout.space.left + width / 2 + 2, layout.space.right - width / 2 - 2);
+  const box = { left: x - width / 2, top: y - height / 2, right: x + width / 2, bottom: y + height / 2,
+                id: `house:sign:${door.to}`, onClick: () => goToRoomId(door.to) };
+  hitBoxes.push(box);
+  layout.arrows.push({ to: door.to, box });
+  // Pink when the mouse is on it (or when furniture is dragged onto it).
+  const lit = state.hoverId === box.id || state.hoverId === `house:door:${door.to}` || (houseDrag && houseDrag.overArrow === door.to);
+  steppedBox(box.left, box.top, box.right, box.bottom, 2, lit ? COLORS.titleBar : COLORS.cream, COLORS.text, 1.5);
+  // The little triangle, pointing the way to go.
+  const arrowX = door.side === "right" ? box.right - 9 : box.left + 9;
+  const point = { left: [-1, 0], right: [1, 0], back: [0, -1], front: [0, 1] }[door.side];
+  ctx.fillStyle = COLORS.text;
+  ctx.beginPath();
+  ctx.moveTo(arrowX + point[0] * 4, y + point[1] * 4);
+  ctx.lineTo(arrowX - point[0] * 3 + point[1] * 4, y - point[1] * 3 + point[0] * 4);
+  ctx.lineTo(arrowX - point[0] * 3 - point[1] * 4, y - point[1] * 3 - point[0] * 4);
+  ctx.closePath();
+  ctx.fill();
+  write(name, door.side === "right" ? x - 5 : x + 5, y + 0.5, FONTS.small, COLORS.text);
+}
+
+// The room's name at the top.
+function drawRoomName(layout) {
   const middle = layout.left + layout.roomWidth / 2;
   const name = HOUSE_ROOMS[state.houseRoom].name;
   ctx.font = FONTS.small;
   const half = ctx.measureText(name).width / 2 + 10;
-  steppedBox(middle - half, layout.wallTop + 6, middle + half, layout.wallTop + 24, 2, COLORS.cream, COLORS.text, 1.5);
-  write(name, middle, layout.wallTop + 15.5, FONTS.small, COLORS.text);
+  const top = Math.max(layout.space.top + 3, layout.wallTop - HOUSE_WALL_THICK - 22);
+  steppedBox(middle - half, top, middle + half, top + 18, 2, COLORS.white, COLORS.text, 1.5);
+  write(name, middle, top + 9.5, FONTS.small, COLORS.text);
+}
 
-  // -1 is the arrow to the room on the left, 1 to the room on the right.
-  layout.arrows = [];
-  const y = layout.wallTop + layout.roomHeight / 2;
-  [-1, 1].forEach(direction => {
-    const next = state.houseRoom + direction;
-    if (next < 0 || next >= HOUSE_ROOMS.length) return;     // no room that way
-    // How much of the room next door shows on this side. If there's enough, the arrow goes
-    // there, and that whole bit works like the arrow. If not, it's just inside this room.
-    const roomRight = layout.left + layout.roomWidth;
-    const peek = direction < 0 ? layout.left - layout.space.left : layout.space.right - roomRight;
-    const inDoorway = peek >= 36;
-    let x = direction < 0 ? layout.left + 18 : roomRight - 18;
-    let box = { left: x - 13, top: y - 20, right: x + 13, bottom: y + 20 };
-    if (inDoorway) {
-      x = direction < 0 ? layout.left - peek / 2 - 3 : roomRight + peek / 2 + 3;
-      box = direction < 0 ? { left: layout.space.left, right: layout.left } : { left: roomRight, right: layout.space.right };
-      box.top = layout.wallTop;
-      box.bottom = layout.wallTop + layout.roomHeight;
-    }
-    Object.assign(box, { id: `house:arrow:${direction}`, onClick: () => goToRoom(next) });
-    layout.arrows.push({ direction, box });
+// The map of the whole house, like a floor plan. The room you're in is outlined in pink,
+// and little dots show where you two and the cats are. Click a room to go there.
+function drawHouseMap(house, space) {
+  ctx.fillStyle = "#DCCFE6";
+  ctx.fillRect(space.left, space.top, space.right - space.left, space.bottom - space.top);
+  // (Clicking the empty part does nothing, so you don't grab furniture under the map.)
+  hitBoxes.push({ left: space.left, top: space.top, right: space.right, bottom: space.bottom, onClick: () => {} });
+  const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide));
+  const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep));
+  const tile = Math.min((space.right - space.left - 20) / across, (space.bottom - space.top - 50) / down);
+  const left = (space.left + space.right) / 2 - across * tile / 2;
+  const top = space.top + 34 + (space.bottom - space.top - 40 - down * tile) / 2;
+  write("Our house", (space.left + space.right) / 2, space.top + 14, FONTS.body, COLORS.text);
+
+  HOUSE_ROOMS.forEach((room, number) => {
+    const box = { left: left + room.x * tile, top: top + room.y * tile, right: left + (room.x + room.wide) * tile,
+                  bottom: top + (room.y + room.deep) * tile, id: `house:map:${room.id}`,
+                  onClick: () => { goToRoom(number); state.houseMapOpen = false; } };
     hitBoxes.push(box);
-    // Pink when the mouse is on it (or when furniture is dragged onto it).
-    const lit = state.hoverId === box.id || (houseDrag && houseDrag.overArrow === direction);
-    steppedBox(x - 13, y - 20, x + 13, y + 20, 2, lit ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
-    // The next room's name under the arrow (if it fits).
-    ctx.font = FONTS.small;
-    const nameWidth = ctx.measureText(HOUSE_ROOMS[next].name).width;
-    if (inDoorway && nameWidth + 14 < peek) {
-      steppedBox(x - nameWidth / 2 - 5, y + 26, x + nameWidth / 2 + 5, y + 42, 2, COLORS.cream, COLORS.text, 1.5);
-      write(HOUSE_ROOMS[next].name, x, y + 34.5, FONTS.small, COLORS.text);
+    const width = box.right - box.left, height = box.bottom - box.top;
+    // Its floor (the patio's is grass).
+    if (room.outside) {
+      ctx.fillStyle = "#A9D49A";
+      ctx.fillRect(box.left, box.top, width, height);
+    } else {
+      fillPattern(FLOORS[roomLook(house.floor, room.id, "wood")] || FLOORS.wood, box.left, box.top, width, height, tile * 1.5);
     }
-    // The little triangle, pointing that way.
-    ctx.fillStyle = COLORS.text;
-    ctx.beginPath();
-    ctx.moveTo(x + direction * 6, y);
-    ctx.lineTo(x - direction * 5, y - 8);
-    ctx.lineTo(x - direction * 5, y + 8);
-    ctx.closePath();
-    ctx.fill();
+    if (state.hoverId === box.id) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.fillRect(box.left, box.top, width, height);
+    }
+    ctx.strokeStyle = "#3E3446";                              // the walls
+    ctx.lineWidth = 3;
+    ctx.strokeRect(box.left, box.top, width, height);
+    // Its name (the short one if the whole name doesn't fit).
+    ctx.font = FONTS.small;
+    const name = [room.name, room.short].find(option => option && ctx.measureText(option).width + 8 < width);
+    if (name) {
+      const half = ctx.measureText(name).width / 2 + 4;
+      const middleX = (box.left + box.right) / 2, middleY = (box.top + box.bottom) / 2;
+      ctx.fillStyle = COLORS.cream;
+      ctx.fillRect(middleX - half, middleY - 7, half * 2, 14);
+      write(name, middleX, middleY + 0.5, FONTS.small, COLORS.text);
+    }
+  });
+  // The room you're in, outlined in pink.
+  const here = HOUSE_ROOMS[state.houseRoom];
+  ctx.strokeStyle = COLORS.heart;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(left + here.x * tile + 3, top + here.y * tile + 3, here.wide * tile - 6, here.deep * tile - 6);
+
+  // Where everyone is.
+  const DOT_COLORS = { tayler: "#F07A9C", jacob: "#5E8FD6", orange: "#F2A03D", black: "#3A3440" };
+  (state.folks || []).forEach(folk => {
+    const room = roomById(folk.room);
+    const x = left + (room.x + keepBetween(folk.x, 0.05, 0.95) * room.wide) * tile;
+    const y = top + (room.y + keepBetween(folk.y, 0.1, 0.95) * room.deep) * tile;
+    ctx.fillStyle = COLORS.white;
+    ctx.fillRect(x - 3.5, y - 3.5, 7, 7);
+    ctx.fillStyle = DOT_COLORS[folk.info.id] || COLORS.text;
+    ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
   });
 }
 
 function goToRoom(number) {
   playSound("click");
   state.houseRoom = number;
-  // The shop flips to this room's page (unless you're picking wallpaper and floors).
-  if (SHOP_PAGES[state.shopPage].id !== "looks") state.shopPage = number;
-  state.houseScroll = 0;
+  state.houseSelected = null;
+}
+
+function goToRoomId(id) {
+  goToRoom(Math.max(0, HOUSE_ROOMS.findIndex(room => room.id === id)));
 }
 
 // One piece of furniture (see-through while it's being dragged), and its click spot.
 function drawHouseItem(item, box, dragging) {
   if (dragging) ctx.globalAlpha = 0.8;
-  drawFurniturePicture(item.type, box, item.flip);
+  drawFurniturePicture(item.type, box, item.flip, item.turned);
   ctx.globalAlpha = 1;
   if (!dragging) {
     hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
                     houseItem: item, onClick: () => {} });
   }
+}
+
+// The little menu over the furniture you clicked: flip it, turn it to face the wall (or
+// back around), or put it away.
+function drawFurnitureMenu(item, box, layout) {
+  const kind = FURNITURE[item.type];
+  // A dotted line around it, so you can see which one it is.
+  ctx.save();
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(box.left - 2, box.top - 2, box.width + 4, box.height + 4);
+  ctx.restore();
+
+  const change = changes => saveHouse({ items: state.house.items.map(other => (other.id === item.id ? { ...other, ...changes } : other)) });
+  const buttons = [{ text: "Flip", onClick: () => { playSound("click"); change({ flip: !item.flip }); } }];
+  // (Wall things and rugs are flat, so they can't turn around.)
+  if (!kind.wall && !kind.rug) {
+    buttons.push({ text: item.turned ? "Face out" : "Face wall", onClick: () => { playSound("click"); change({ turned: !item.turned }); } });
+  }
+  buttons.push({ text: "Put away", onClick: () => {
+    playSound("paper", 0.6);
+    state.houseSelected = null;
+    change({ placed: false });
+  } });
+
+  // The buttons go in a row just under it (or above, if it's right at the bottom), so
+  // they don't cover anyone sitting on it.
+  ctx.font = FONTS.small;
+  const widths = buttons.map(button => ctx.measureText(button.text).width + 12);
+  const total = widths.reduce((sum, width) => sum + width, 0) + (buttons.length - 1) * 3;
+  const middle = keepBetween(box.left + box.width / 2, layout.space.left + total / 2 + 2, layout.space.right - total / 2 - 2);
+  let top = box.top + box.height + 5;
+  if (top + 16 > layout.space.bottom - 2) top = box.top - 21;
+  let x = middle - total / 2;
+  buttons.forEach((button, number) => {
+    const hitBox = { left: x, top, right: x + widths[number], bottom: top + 16, id: `house:menu:${number}`, onClick: button.onClick };
+    hitBoxes.push(hitBox);
+    const pink = button.text === "Put away";
+    const fill = state.hoverId === hitBox.id ? COLORS.titleBar : pink ? COLORS.acceptFill : COLORS.white;
+    steppedBox(hitBox.left, hitBox.top, hitBox.right, hitBox.bottom, 2, fill, COLORS.text, 1.5);
+    write(button.text, x + widths[number] / 2, top + 8.5, FONTS.small, pink && state.hoverId !== hitBox.id ? COLORS.acceptText : COLORS.text);
+    x += widths[number] + 3;
+  });
 }
 
 // The shop on the right: coins, two tabs (Shop and Mine), and cards for each thing.
@@ -5688,9 +5888,9 @@ function moveHouseDrag() {
   drag.spot = clampSpot(drag.item, { x, y }, layout);
   const over = box => state.mouse.x >= box.left && state.mouse.x <= box.right && state.mouse.y >= box.top && state.mouse.y <= box.bottom;
   drag.overShop = over(layout.sidebar);
-  // Over one of the arrows? (-1 or 1, or 0 if not.)
+  // Over one of the door signs or doorways? (The room it goes to, or nothing.)
   const arrow = (layout.arrows || []).find(other => over(other.box));
-  drag.overArrow = arrow ? arrow.direction : 0;
+  drag.overArrow = arrow ? arrow.to : null;
 }
 
 // The mouse came up: drop it (or flip it, if it was just a click).
@@ -5699,16 +5899,20 @@ function endHouseDrag() {
   houseDrag = null;
   const items = state.house.items;
   if (!drag.moved) {
+    // Just a click: show its little menu (flip, face the wall, put away). Click again to hide it.
     playSound("click");
-    saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, flip: !other.flip } : other)) });
+    state.houseSelected = state.houseSelected === drag.item.id ? null : drag.item.id;
   } else if (drag.overShop) {
     playSound("paper", 0.6);
     saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, placed: false } : other)) });
   } else if (drag.overArrow) {
-    // Dropped on an arrow: it moves into that room (just inside the door), and you go with it.
+    // Dropped on a door: it moves into that room (just inside the door), and you go with it.
     playSound("flip", 0.5);
-    state.houseRoom += drag.overArrow;
-    const spot = { x: drag.overArrow < 0 ? 0.8 : 0.2, y: Math.round(drag.spot.y * 1000) / 1000, room: currentRoomId() };
+    const door = doorBetween(drag.overArrow, currentRoomId());
+    const inside = door ? doorSpot(door, "inside") : { x: 0.5, y: 0.7 };
+    const wall = FURNITURE[drag.item.type].wall;
+    const spot = { x: inside.x, y: wall ? Math.round(drag.spot.y * 1000) / 1000 : inside.y, room: drag.overArrow };
+    goToRoomId(drag.overArrow);
     saveHouse({ items: items.map(other => (other.id === drag.item.id ? { ...other, ...spot } : other)) });
   } else {
     playSound("flip", 0.5);
@@ -5742,6 +5946,7 @@ const FOLK_SPEED = { person: 60, cat: 70 };
 //   line  - how far down the picture you're "cut off" (by the cushion or blanket)
 //   show  - how much of you shows, from the top (0.3 = just your head)
 //   facing - "down" = facing out, "up" = your back to us (at the desk)
+// (When the furniture is turned to face the wall, you face the other way, behind it.)
 const SEATS = {
   couch: { spots: [0.33, 0.67], line: 0.6, show: 0.62, facing: "down" },
   darksofa: { spots: [0.33, 0.67], line: 0.62, show: 0.62, facing: "down" },
@@ -5793,7 +5998,7 @@ function makeFolks() {
     info, x: 0.2 + number * 0.2, y: 0.55 + (number % 2) * 0.25, facing: "down",
     // Which room they're in. They start spread out, so no room is empty.
     room: HOUSE_ROOMS[number % HOUSE_ROOMS.length].id,
-    leaving: 0,     // -1 or 1 while walking out the left or right side into the next room
+    leaving: null,  // the door they're walking out of, into the room next door
     doing: info.person ? "stand" : "sit", timer: 1 + number * 1.5, target: null, goal: null, petted: 0,
   }));
 }
@@ -5831,13 +6036,16 @@ function updateFolks(layouts, placed, boxes, time) {
         folk.x = target.x;
         folk.y = target.y;
         if (folk.leaving) {
-          // Out the side of the room: come in the other side of the room next door,
-          // and walk a little way in.
-          const next = HOUSE_ROOMS.findIndex(other => other.id === folk.room) + folk.leaving;
-          folk.room = HOUSE_ROOMS[keepBetween(next, 0, HOUSE_ROOMS.length - 1)].id;
-          folk.x = folk.leaving > 0 ? -0.08 : 1.08;
-          folk.target = { x: folk.leaving > 0 ? between(0.15, 0.5, Math.random()) : between(0.5, 0.85, Math.random()), y: folk.y };
-          folk.leaving = 0;
+          // Out the door: come in through the matching door of the room next door, and
+          // walk a little way in.
+          const from = folk.room;
+          folk.room = folk.leaving.to;
+          const door = doorBetween(folk.room, from);
+          const outside = door ? doorSpot(door, "outside") : { x: 0.5, y: 1.1 };
+          folk.x = outside.x;
+          folk.y = outside.y;
+          folk.target = door ? doorSpot(door, "inside") : { x: 0.5, y: 0.7 };
+          folk.leaving = null;
           return;
         }
         if (folk.goal) {
@@ -5875,12 +6083,8 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   folk.facing = "down";
 
   const choices = ["walk", "walk", isCat ? "sit" : "stand"];
-  // Going into another room (if there's one that way).
-  const roomNumber = HOUSE_ROOMS.findIndex(other => other.id === folk.room);
-  for (let time = 0; time < ROOM_WANDER; time++) {
-    if (roomNumber > 0) choices.push("leave left");
-    if (roomNumber < HOUSE_ROOMS.length - 1) choices.push("leave right");
-  }
+  // Going into another room (through one of this room's doors).
+  for (let time = 0; time < ROOM_WANDER; time++) choices.push("leave");
   // Only the furniture in the room they're in.
   placed.filter(item => itemRoom(item) === folk.room).forEach(item => {
     if (isCat) {
@@ -5897,11 +6101,12 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   if (choice === "walk") {
     folk.doing = "walk";
     folk.target = { x: between(0.08, 0.92, Math.random()), y: between(0.3, 0.95, Math.random()) };
-  } else if (choice === "leave left" || choice === "leave right") {
-    // Walk right off the side of the room (see updateFolks for the other side).
+  } else if (choice === "leave") {
+    // Walk out one of the doors (see updateFolks for coming in the other side).
+    const doors = roomById(folk.room).doors;
     folk.doing = "walk";
-    folk.leaving = choice === "leave left" ? -1 : 1;
-    folk.target = { x: folk.leaving < 0 ? -0.08 : 1.08, y: keepBetween(folk.y, 0.4, 0.9) };
+    folk.leaving = doors[Math.floor(Math.random() * doors.length)];
+    folk.target = doorSpot(folk.leaving, "outside");
   } else if (typeof choice === "string") {
     folk.doing = choice;                // "stand", "sit", or "nap" (right on the floor)
     folk.timer = choice === "nap" ? between(8, 18, Math.random()) : between(2, 5, Math.random());
@@ -5922,7 +6127,10 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
 function folkDepth(folk, layout, boxes) {
   if (folk.doing === "using" && boxes[folk.goal.itemId]) {
     const box = boxes[folk.goal.itemId];
-    return box.top + box.height + 0.5;
+    const item = state.house.items.find(other => other.id === folk.goal.itemId);
+    // Sitting on something turned to face the wall? Then they're behind it.
+    const behind = item && item.turned && !folk.goal.nap;
+    return box.top + box.height + (behind ? -0.5 : 0.5);
   }
   return layout.floorTop + folk.y * layout.floorHeight;
 }
@@ -5950,7 +6158,9 @@ function drawFolk(folk, layout, boxes, time) {
       const across = seat.spots[folk.goal.spot];
       x = box.left + box.width * (item.flip ? 1 - across : across);
       bottom = box.top + box.height * seat.line;
-      row = PERSON_ROWS[seat.facing];
+      // (Turned to face the wall? Then they face the other way too.)
+      const flipped = { down: "up", up: "down" };
+      row = PERSON_ROWS[item.turned ? flipped[seat.facing] : seat.facing];
       column = 0;
       show = seat.show;
       if (seat.sleepy) {
