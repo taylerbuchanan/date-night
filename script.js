@@ -3960,11 +3960,6 @@ const GAMES = {
     intro: "Guess if the next card is higher or lower!", bestText: n => `${n} in a row`,
     setup: setupHigher, step: stepHigher,
   },
-  breakout: {
-    label: "Breakout", title: "Breakout", picture: drawBreakoutIcon,
-    intro: "Move with your mouse. Break all the hearts!", bestText: n => `${n} hearts`,
-    setup: setupBreakout, step: stepBreakout, action: launchBall,
-  },
   whack: {
     label: "Boop", title: "Boop the cats!", picture: drawWhackIcon,
     intro: `Boop the cats (black = 3 points). Don't boop ${OTHER}!`, bestText: n => `${n} points`,
@@ -4508,7 +4503,7 @@ function flipCard(game, number) {
 
 
 // ====================================================================================
-// MORE GAMES: Higher or lower, Breakout, and games you play TOGETHER
+// MORE GAMES: Higher or lower, and games you play TOGETHER
 // (Tic-tac-toe, Connect 4, and the Couples quiz, which take turns through Firebase)
 // ====================================================================================
 
@@ -4605,132 +4600,6 @@ function stepHigher(game, area, seconds) {
   write("Will the next card be...", middle, cardsTop + 100, FONTS.note, COLORS.text);
   drawButton(middle - 60, cardsTop + 128, 100, 28, "Higher", COLORS.acceptFill, COLORS.acceptText, () => guessCard(game, true));
   drawButton(middle + 60, cardsTop + 128, 100, 28, "Lower", COLORS.cream, COLORS.text, () => guessCard(game, false));
-}
-
-
-// ---------- Breakout: bounce the ball to break all the hearts ----------
-
-const BREAKOUT_COLORS = ["#F07A9C", "#F8BFCB", "#C9B6F2", "#7FB8F0"];
-const PADDLE_WIDTH = 56;
-
-function setupBreakout(game, area) {
-  Object.assign(game, { lives: 3, score: 0, level: 1, speed: 170, paddleX: (area.left + area.right) / 2 });
-  buildBricks(game, area);
-  resetBall(game, area);
-}
-
-// Rows of heart bricks along the top.
-function buildBricks(game, area) {
-  const width = 32, height = 13, gap = 4;
-  const columns = Math.floor((area.right - area.left - 16 + gap) / (width + gap));
-  const left = (area.left + area.right) / 2 - (columns * (width + gap) - gap) / 2;
-  game.bricks = [];
-  for (let row = 0; row < 4; row++) {
-    for (let column = 0; column < columns; column++) {
-      game.bricks.push({ x: left + column * (width + gap), y: area.top + 36 + row * (height + gap),
-                         w: width, h: height, color: BREAKOUT_COLORS[row], alive: true });
-    }
-  }
-}
-
-// The ball waits on the paddle until he clicks (or presses Space).
-function resetBall(game, area) {
-  game.ball = { x: game.paddleX, y: area.bottom - 22, vx: 0, vy: 0, stuck: true };
-}
-
-function launchBall(game) {
-  const ball = game.ball;
-  if (!ball || !ball.stuck) return;
-  ball.stuck = false;
-  const angle = between(-0.6, 0.6, Math.random());
-  ball.vx = Math.sin(angle) * game.speed;
-  ball.vy = -Math.cos(angle) * game.speed;
-  playSound("jump", 0.6);
-}
-
-function stepBreakout(game, area, seconds) {
-  const paddleY = area.bottom - 14;
-  // The paddle follows the mouse (but stays inside the window).
-  if (!game.paused) game.paddleX = keepBetween(state.mouse.x, area.left + PADDLE_WIDTH / 2 + 2, area.right - PADDLE_WIDTH / 2 - 2);
-  const ball = game.ball;
-
-  if (ball.stuck) {
-    ball.x = game.paddleX;
-    ball.y = paddleY - 8;
-  } else {
-    // Move in small steps, so the ball never skips through a brick.
-    const steps = Math.ceil(seconds * 120) || 1;
-    for (let i = 0; i < steps; i++) {
-      ball.x += ball.vx * seconds / steps;
-      ball.y += ball.vy * seconds / steps;
-      // Walls.
-      if (ball.x < area.left + 4) { ball.x = area.left + 4; ball.vx = Math.abs(ball.vx); }
-      if (ball.x > area.right - 4) { ball.x = area.right - 4; ball.vx = -Math.abs(ball.vx); }
-      if (ball.y < area.top + 22) { ball.y = area.top + 22; ball.vy = Math.abs(ball.vy); }
-      // The paddle: where it hits changes the angle (the edges send it sideways).
-      if (ball.vy > 0 && ball.y >= paddleY - 6 && ball.y <= paddleY + 2 &&
-          Math.abs(ball.x - game.paddleX) <= PADDLE_WIDTH / 2 + 3) {
-        const angle = ((ball.x - game.paddleX) / (PADDLE_WIDTH / 2)) * 1.0;
-        ball.vx = Math.sin(angle) * game.speed;
-        ball.vy = -Math.cos(angle) * game.speed;
-        playKeySound(0.4);
-      }
-      // Bricks.
-      for (const brick of game.bricks) {
-        if (!brick.alive) continue;
-        if (ball.x > brick.x - 3 && ball.x < brick.x + brick.w + 3 && ball.y > brick.y - 3 && ball.y < brick.y + brick.h + 3) {
-          brick.alive = false;
-          game.score += 1;
-          ball.vy = -ball.vy;
-          playSound("coin", 0.4);
-          break;
-        }
-      }
-    }
-    // Missed it!
-    if (ball.y > area.bottom + 6) {
-      game.lives -= 1;
-      if (game.lives <= 0) {
-        playSound("gameover");
-        endGame(game, "Game over!", `You broke ${game.score} hearts.`, game.score);
-        return;
-      }
-      playSound("buzzer", BUZZER_VOLUME);
-      resetBall(game, area);
-    }
-    // All the bricks are gone: a new level, a little faster.
-    if (game.bricks.every(brick => !brick.alive)) {
-      game.level += 1;
-      game.speed += 25;
-      playSound("chime", 0.4);
-      buildBricks(game, area);
-      resetBall(game, area);
-    }
-  }
-
-  // Draw everything.
-  game.bricks.forEach(brick => {
-    if (!brick.alive) return;
-    ctx.fillStyle = brick.color;
-    ctx.fillRect(brick.x, brick.y, brick.w, brick.h);
-    ctx.strokeStyle = COLORS.text;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(brick.x, brick.y, brick.w, brick.h);
-    drawPixels(HEART, brick.x + brick.w / 2 - 3.5, brick.y + 3.5, 1, COLORS.white);
-  });
-  steppedBox(game.paddleX - PADDLE_WIDTH / 2, paddleY, game.paddleX + PADDLE_WIDTH / 2, paddleY + 8, 2,
-             COLORS.acceptFill, COLORS.text, 1.5);
-  ctx.fillStyle = COLORS.white;
-  ctx.fillRect(Math.round(ball.x) - 3, Math.round(ball.y) - 3, 6, 6);
-  ctx.strokeStyle = COLORS.text;
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(Math.round(ball.x) - 3, Math.round(ball.y) - 3, 6, 6);
-
-  write(`Hearts: ${game.score}   Level ${game.level}`, area.left + 8, area.top + 12, FONTS.small, COLORS.text, "left");
-  for (let i = 0; i < 3; i++) {
-    drawPixels(HEART, area.right - 22 - i * 18, area.top + 6, 2, i < game.lives ? COLORS.heart : COLORS.lostLife);
-  }
-  if (ball.stuck) write("Click to launch!", (area.left + area.right) / 2, area.bottom - 40, FONTS.small, COLORS.text);
 }
 
 
@@ -5825,7 +5694,6 @@ const GAME_COINS = {
   fly: clouds => clouds * 2,
   match: moves => 24 - moves,
   higher: streak => streak * 2,
-  breakout: hearts => Math.round(hearts / 2),
   whack: points => Math.round(points / 2),
 };
 
@@ -6479,19 +6347,6 @@ function drawHigherIcon(x, y) {
   write("7", x - 8, y - 2, FONTS.menu, COLORS.heart);
   steppedBox(x - 2, y - 12, x + 18, y + 16, 2, COLORS.acceptFill, COLORS.text, 2);
   write("?", x + 8, y + 2, FONTS.menu, COLORS.white);
-}
-
-function drawBreakoutIcon(x, y) {
-  BREAKOUT_COLORS.slice(0, 3).forEach((color, row) => {
-    for (let column = 0; column < 3; column++) {
-      ctx.fillStyle = color;
-      ctx.fillRect(x - 19 + column * 13, y - 16 + row * 7, 11, 5);
-    }
-  });
-  ctx.fillStyle = COLORS.white;
-  ctx.fillRect(x + 1, y + 4, 4, 4);
-  ctx.fillStyle = COLORS.acceptFill;
-  ctx.fillRect(x - 10, y + 13, 22, 4);
 }
 
 function drawSparkles() {
