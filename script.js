@@ -5263,6 +5263,9 @@ const FOLK_STARTS = [[300, 900], [560, 820], [600, 780], [250, 380]];
 // How often they wander into another room: 1 = sometimes, bigger = more often.
 const ROOM_WANDER = 3;
 
+// How often they go to sit, sleep, or nap somewhere in another room: bigger = more often.
+const SPOT_WANDER = 3;
+
 // How often you two are cute: go find each other, smooch, chat, cuddle, bring flowers,
 // and pet the cats (and how often the cats come say hi). 0 = never, bigger = more often.
 const FOLK_LOVE = 2;
@@ -5441,6 +5444,13 @@ function chooseWhatToDo(folk) {
   HOUSE_SPOTS.filter(spot => (isCat ? spot.kind === "nap" : spot.kind !== "nap") && !spotTaken(spot, folk) &&
                              areaAt(...spot.from).id === folk.room).forEach(spot => choices.push({ spot }));
   if (isCat) choices.push("nap");
+  // Going to do something somewhere else in the house: gaming at the desks, sleeping in
+  // bed, eating at the table, sitting on the porch... (or, for a cat, a nap in a cat bed).
+  const elsewhere = HOUSE_SPOTS.filter(spot => (isCat ? spot.kind === "nap" : spot.kind !== "nap") && !spotTaken(spot, folk) &&
+                                               areaAt(...spot.from).id !== folk.room);
+  for (let time = 0; time < SPOT_WANDER && elsewhere.length; time++) {
+    choices.push({ spot: elsewhere[Math.floor(Math.random() * elsewhere.length)] });
+  }
 
   // Being cute (see FOLK_LOVE).
   const others = state.folks.filter(other => other !== folk);
@@ -5541,7 +5551,7 @@ function drawFolk(folk, view, time) {
       ctx.globalAlpha = 1;
     } else {
       // Sitting: the real sitting pictures (see POSES), with your hips on the seat.
-      const size = height * SIT_SIZE;
+      const size = height * (SIT_SIZE[who] || 0.9);
       const poses = { down: ["sit", false, 0.4], up: ["sitBack", false, 0.32], left: ["sitLeft", false, 0.38], right: ["sitLeft", true, 0.38] };
       const [pose, mirrored, belowHips] = poses[spot.facing];
       drawn = drawPose(who, pose, spotX, spotY + size * belowHips, size, false, mirrored);
@@ -5657,7 +5667,9 @@ const POSES = {
 };
 // How big they're drawn, compared to standing up: sitting pictures by height, lying-down
 // pictures by width.
-const SIT_SIZE = 0.78, LIE_SIZE = 0.85;
+// (The sitting pictures were drawn a little differently from the walking ones, so each of
+// you has your own number. These make your head the same size sitting as standing.)
+const SIT_SIZE = { tayler: 0.93, jacob: 0.85 }, LIE_SIZE = 0.85;
 const POSE_PICTURES = {};
 function posePicture(who, pose) {
   const name = `${who}-${POSES[pose]}`;
