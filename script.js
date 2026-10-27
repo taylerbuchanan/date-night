@@ -4768,14 +4768,23 @@ const HOUSE_DOORS = [
   ["passage", "bathroom", 28, 17],
   ["passage", "laundry", 34, 17],
   ["hall", "patio", 21, 22],
-  ["living", "patio", 9, 22],
 ];
-const HOUSE_DOOR_SIZE = 2.6;     // how wide a doorway is, in tiles
+const HOUSE_DOOR_SIZE = 3;       // how wide a doorway is, in tiles
+
+// How roomy the house is: how much bigger the rooms are than the furniture and people.
+// (Bigger = more space in every room. 1 = a person is about 4.6 tiles tall.)
+const HOUSE_ROOMY = 1.6;
+// How close the + and − buttons zoom in. 1 = the whole house fits in the window.
+const HOUSE_ZOOMS = [1, 1.6, 2.3];
+state.houseZoom = 1;                     // which of HOUSE_ZOOMS (it starts zoomed in a bit)
+state.houseCamera = { x: 0.5, y: 0.5 };  // the middle of what you see (0 to 1 across and down the house)
+state.houseCameraGoal = { x: 0.5, y: 0.5 };   // where it's gliding to
+let houseSpace = null;                   // the part of the window the house is drawn in
 
 // How tall the strip of wall at the back of each room is, in tiles.
 function wallTiles(room) {
   if (room.outside) return 0;
-  return Math.min(3.5, room.deep * 0.4);
+  return Math.min(4.5, room.deep * 0.4);
 }
 
 // Give each room its list of doors: { to, side, at, x, y }. "side" is which side of the
@@ -4801,6 +4810,14 @@ state.houseRoom = 0;    // the room you picked (new furniture, wallpaper, and fl
 state.shopPage = 0;     // which page of the shop is showing (see SHOP_PAGES)
 state.houseShopHidden = false;   // is the shop tucked away (to see more of the house)?
 state.houseSelected = null;      // the piece of furniture you clicked on (it gets a little menu)
+
+state.housePicked = false;       // is a room picked? (If not, new things go in the living room.)
+
+// No room picked anymore (new things go back to going in the living room).
+function unpickRoom() {
+  state.housePicked = false;
+  state.houseRoom = 0;
+}
 
 // The room you picked.
 function currentRoomId() {
@@ -5378,10 +5395,28 @@ function drawHouse(inside, time) {
   const shopRoom = state.houseShopHidden ? 0 : HOUSE_SIDEBAR + 2;
   const space = { left: inside.left + 4, top: inside.top + 4, right: inside.right - shopRoom - 4, bottom: inside.bottom - 4 };
   const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
+  houseSpace = space;
   ctx.fillStyle = "#6B5A7E";                                  // the ground around the house
   ctx.fillRect(space.left, space.top, space.right - space.left, space.bottom - space.top);
-  // Clicking the ground (not on any room) closes the furniture menu.
-  hitBoxes.push({ ...space, onClick: () => { state.houseSelected = null; } });
+  // Clicking the ground (not on any room) closes the furniture menu and unpicks the room.
+  hitBoxes.push({ ...space, onClick: () => { state.houseSelected = null; unpickRoom(); } });
+
+  // The camera glides toward where the arrows sent it. Dragging furniture to the edge of
+  // the window moves the camera that way too.
+  const goal = state.houseCameraGoal;
+  if (houseDrag && houseDrag.moved) {
+    if (state.mouse.x < space.left + 20) goal.x -= 0.006;
+    if (state.mouse.x > space.right - 20) goal.x += 0.006;
+    if (state.mouse.y < space.top + 20) goal.y -= 0.006;
+    if (state.mouse.y > space.bottom - 20) goal.y += 0.006;
+  }
+  state.houseCamera.x += (goal.x - state.houseCamera.x) * 0.2;
+  state.houseCamera.y += (goal.y - state.houseCamera.y) * 0.2;
+  // (Only draw inside the space, since the house can be bigger than it.)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(space.left, space.top, space.right - space.left, space.bottom - space.top);
+  ctx.clip();
 
   // Where every room goes on the screen.
   const layouts = houseLayouts = houseRoomLayouts(space, sidebar);
@@ -5391,11 +5426,13 @@ function drawHouse(inside, time) {
   HOUSE_ROOMS.forEach((room, number) => {
     const layout = layouts[room.id];
     drawWallAndFloor(house, room, layout);
-    hitBoxes.push({ left: layout.left, top: layout.wallTop, right: layout.left + layout.roomWidth,
+    houseHitBox({ left: layout.left, top: layout.wallTop, right: layout.left + layout.roomWidth,
                     bottom: layout.wallTop + layout.roomHeight, onClick: () => {
-                      if (state.houseRoom !== number) playSound("click");
-                      state.houseRoom = number;
+                      playSound("click");
                       state.houseSelected = null;
+                      // Clicking the room that's already picked unpicks it.
+                      if (state.housePicked && state.houseRoom === number) unpickRoom();
+                      else { state.houseRoom = number; state.housePicked = true; }
                     } });
   });
   drawHouseWalls(house, layouts);
@@ -5433,16 +5470,22 @@ function drawHouse(inside, time) {
   // Each room's name, and a pink line around the room you picked.
   HOUSE_ROOMS.forEach(room => drawRoomName(room, layouts[room.id]));
   const picked = layouts[currentRoomId()];
-  ctx.save();
-  ctx.setLineDash([4, 3]);
-  ctx.strokeStyle = COLORS.heart;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(picked.left + 2, picked.wallTop + 2, picked.roomWidth - 4, picked.roomHeight - 4);
-  ctx.restore();
+  if (state.housePicked) {
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = COLORS.heart;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(picked.left + 2, picked.wallTop + 2, picked.roomWidth - 4, picked.roomHeight - 4);
+    ctx.restore();
+  }
 
   // The menu for the furniture you clicked.
   const selected = placed.find(item => item.id === state.houseSelected);
   if (selected && !dragId) drawFurnitureMenu(selected, boxes[selected.id], layouts[itemRoom(selected)] || picked);
+  ctx.restore();
+
+  // Zoom buttons, and arrows for moving around when you're zoomed in.
+  drawHouseCameraButtons(space);
 
   if (state.houseShopHidden) {
     // A button in the top right corner to bring the shop back.
@@ -5454,14 +5497,76 @@ function drawHouse(inside, time) {
   }
 }
 
+// Adds a click spot, but only the part of it inside the house's space (things can be
+// hidden past the edges when you're zoomed in).
+function houseHitBox(box) {
+  const space = houseSpace;
+  const clipped = { ...box, left: Math.max(box.left, space.left), top: Math.max(box.top, space.top),
+                    right: Math.min(box.right, space.right), bottom: Math.min(box.bottom, space.bottom) };
+  if (clipped.right > clipped.left && clipped.bottom > clipped.top) hitBoxes.push(clipped);
+}
+
+// The + and − buttons (top left), and an arrow on each side for moving around the house
+// (only where there's more house that way).
+function drawHouseCameraButtons(space) {
+  [[-1, "−"], [1, "+"]].forEach(([change, label], number) => {
+    const next = state.houseZoom + change;
+    const can = next >= 0 && next < HOUSE_ZOOMS.length;
+    drawButton(space.left + 14 + number * 24, space.top + 14, 20, 20, label, can ? COLORS.white : COLORS.cream,
+               can ? COLORS.text : "#B9A9C4", () => { if (can) { playSound("click"); state.houseZoom = next; } });
+  });
+  const camera = state.houseCamera, goal = state.houseCameraGoal;
+  const width = space.right - space.left, height = space.bottom - space.top;
+  const layout = houseLayouts[HOUSE_ROOMS[0].id];
+  const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide)) * layout.tile;
+  const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep)) * layout.tile;
+  const halfX = (width - 12) / 2 / across, halfY = (height - 12) / 2 / down;
+  const arrows = [
+    { key: "x", way: -1, x: space.left + 14, y: (space.top + space.bottom) / 2, more: halfX < 0.5 && camera.x > halfX + 0.01 },
+    { key: "x", way: 1, x: space.right - 14, y: (space.top + space.bottom) / 2, more: halfX < 0.5 && camera.x < 1 - halfX - 0.01 },
+    { key: "y", way: -1, x: (space.left + space.right) / 2, y: space.top + 14, more: halfY < 0.5 && camera.y > halfY + 0.01 },
+    { key: "y", way: 1, x: (space.left + space.right) / 2, y: space.bottom - 14, more: halfY < 0.5 && camera.y < 1 - halfY - 0.01 },
+  ];
+  arrows.filter(arrow => arrow.more).forEach(arrow => {
+    const id = `house:pan:${arrow.key}${arrow.way}`;
+    const box = { left: arrow.x - 11, top: arrow.y - 11, right: arrow.x + 11, bottom: arrow.y + 11, id, onClick: () => {
+      playSound("click");
+      // Move about half of what you can see.
+      goal[arrow.key] += arrow.way * (arrow.key === "x" ? halfX : halfY);
+    } };
+    hitBoxes.push(box);
+    steppedBox(box.left, box.top, box.right, box.bottom, 2, state.hoverId === id ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
+    // The little triangle, pointing that way.
+    const [dx, dy] = arrow.key === "x" ? [arrow.way, 0] : [0, arrow.way];
+    ctx.fillStyle = COLORS.text;
+    ctx.beginPath();
+    ctx.moveTo(arrow.x + dx * 5, arrow.y + dy * 5);
+    ctx.lineTo(arrow.x - dx * 4 + dy * 6, arrow.y - dy * 4 + dx * 6);
+    ctx.lineTo(arrow.x - dx * 4 - dy * 6, arrow.y - dy * 4 - dx * 6);
+    ctx.closePath();
+    ctx.fill();
+  });
+}
+
 // Where every room goes on the screen: the whole floor plan, as big as fits, in the middle.
 // Each room's layout says where its wall strip and floor are, and how big the pictures are.
 function houseRoomLayouts(space, sidebar) {
   const across = Math.max(...HOUSE_ROOMS.map(room => room.x + room.wide));
   const down = Math.max(...HOUSE_ROOMS.map(room => room.y + room.deep));
-  const tile = Math.min((space.right - space.left - 12) / across, (space.bottom - space.top - 12) / down);
-  const left = Math.round((space.left + space.right) / 2 - across * tile / 2);
-  const top = Math.round((space.top + space.bottom) / 2 - down * tile / 2);
+  const width = space.right - space.left, height = space.bottom - space.top;
+  // Zoomed all the way out, the whole house fits. Zoomed in, it's bigger than the window,
+  // and the camera says which part you see.
+  const fit = Math.min((width - 12) / across, (height - 12) / down);
+  const tile = fit * HOUSE_ZOOMS[state.houseZoom];
+  // (The camera can't go past the edges of the house.)
+  const camera = state.houseCamera;
+  [["x", across, width], ["y", down, height]].forEach(([key, size, view]) => {
+    const half = (view - 12) / 2 / tile / size;               // half of what you see, 0 to 1
+    camera[key] = half >= 0.5 ? 0.5 : keepBetween(camera[key], half, 1 - half);
+    state.houseCameraGoal[key] = half >= 0.5 ? 0.5 : keepBetween(state.houseCameraGoal[key], half, 1 - half);
+  });
+  const left = Math.round((space.left + space.right) / 2 - camera.x * across * tile);
+  const top = Math.round((space.top + space.bottom) / 2 - camera.y * down * tile);
   const layouts = {};
   HOUSE_ROOMS.forEach(room => {
     const wallHeight = wallTiles(room) * tile;
@@ -5469,9 +5574,9 @@ function houseRoomLayouts(space, sidebar) {
       left: left + room.x * tile, wallTop: top + room.y * tile, wallHeight,
       floorTop: top + room.y * tile + wallHeight, floorHeight: (room.deep - wallTiles(room)) * tile,
       roomWidth: room.wide * tile, roomHeight: room.deep * tile, sidebar, space, tile, houseLeft: left, houseTop: top,
-      // How much the pictures are shrunk (a person is about 4.6 tiles tall).
-      art: tile * 22 / 560 * HOUSE_ART_SIZE,
-      pattern: tile * 22 / 9,     // how big the wallpaper and floor patterns are
+      // How much the pictures are shrunk (see HOUSE_ROOMY).
+      art: tile * 22 / 560 / HOUSE_ROOMY * HOUSE_ART_SIZE,
+      pattern: tile * 22 / 9 / HOUSE_ROOMY,     // how big the wallpaper and floor patterns are
     };
   });
   return layouts;
@@ -5559,8 +5664,8 @@ function drawHouseItem(item, box, dragging) {
   drawFurniturePicture(item.type, box, item.flip, itemFacing(item));
   ctx.globalAlpha = 1;
   if (!dragging) {
-    hitBoxes.push({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
-                    houseItem: item, onClick: () => {} });
+    houseHitBox({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height,
+                  houseItem: item, onClick: () => {} });
   }
 }
 
@@ -5904,7 +6009,7 @@ function endHouseDrag() {
 
 const FOLKS = [
   { id: "tayler", sheet: "tayler", person: true },
-  { id: "jacob", sheet: "jacob", person: true },
+  { id: "jacob", sheet: "jacob", person: true, tall: 1.08 },     // (tall: a bit taller than everyone else)
   { id: "orange", sheet: "orangecat", cat: 0 },
   { id: "black", sheet: "blackcat", cat: 1 },
 ];
@@ -6029,9 +6134,29 @@ const FOLK_CHATS = [
 ];
 const CHAT_LINE_SECONDS = 2.2;    // how long each speech bubble stays up
 
+// What Jacob says when he brings Tayler flowers (and what she says back).
+const FLOWER_CHATS = [
+  ["got you these", "omg i love them"],
+  ["for you :)", "you're the sweetest"],
+  ["saw these and thought of you", "stoppp i love you"],
+  ["flowers for my favorite person", "aww thank you!!"],
+];
+
+// The little bouquet (each letter is one color).
+const BOUQUET = [
+  ".P.R.",
+  "PYPRP",
+  "RPYPR",
+  ".RPY.",
+  "..g..",
+  ".WgW.",
+  "..W..",
+];
+const BOUQUET_COLORS = { P: "#F8A5BE", R: "#E05A6B", Y: "#FFE08A", g: "#5E9E5A", W: "#FFF4EA" };
+
 // Starts a little conversation: "folk" says the first line, then "other" answers, and so on.
-function startChat(folk, other) {
-  folk.chat = { lines: FOLK_CHATS[Math.floor(Math.random() * FOLK_CHATS.length)], with: other.info.id, seconds: 0 };
+function startChat(folk, other, chats = FOLK_CHATS) {
+  folk.chat = { lines: chats[Math.floor(Math.random() * chats.length)], with: other.info.id, seconds: 0 };
   return folk.chat.lines.length * CHAT_LINE_SECONDS;
 }
 
@@ -6111,8 +6236,9 @@ function startTogether(folk) {
     folk.timer = folk.together = 5;
     return;
   }
-  const seconds = kind === "chat" ? startChat(folk, other) : kind === "smooch" ? 4 : 3.5;
-  folk.doing = kind;                                    // "smooch", "chat", or "pet"
+  const seconds = kind === "chat" ? startChat(folk, other) : kind === "flowers" ? startChat(folk, other, FLOWER_CHATS) + 1
+                : kind === "smooch" ? 4 : 3.5;
+  folk.doing = kind;                                    // "smooch", "chat", "flowers", or "pet"
   folk.timer = folk.together = seconds;
   folk.facing = folk.x < other.x ? "right" : "left";
   other.doing = kind === "pet" ? "purr" : kind;
@@ -6264,6 +6390,10 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   // Being cute (see FOLK_LOVE).
   const others = state.folks.filter(other => other !== folk);
   const partner = folk.info.person && others.find(other => other.info.person);
+  // Every now and then, Jacob brings Tayler flowers.
+  if (FOLK_LOVE && folk.info.id === "jacob" && partner && partner.room === folk.room && folkIsFree(partner)) {
+    choices.push({ meet: partner, kind: "flowers" });
+  }
   for (let time = 0; time < FOLK_LOVE; time++) {
     if (partner) {
       // Go find each other, or smooch if you're in the same room.
@@ -6308,7 +6438,8 @@ function chooseWhatToDo(folk, placed, boxes, layout) {
   } else if (choice.meet) {
     // Walk over next to them. (They wait for you, unless you're a cat coming to say hi.)
     const other = choice.meet;
-    const gap = (choice.kind === "smooch" ? 26 : 30) * layout.art / layout.roomWidth;
+    // (How far apart they stand: close for a smooch, a little further for talking.)
+    const gap = { smooch: 30, chat: 44, flowers: 44, pet: 34, visit: 30 }[choice.kind] * layout.art / layout.roomWidth;
     const side = folk.x < other.x ? -1 : 1;
     let x = other.x + side * gap;
     if (x < 0.04 || x > 0.96) x = other.x - side * gap;
@@ -6351,7 +6482,7 @@ function folkDepth(folk, layout, boxes) {
 // Draws one of them, doing whatever they're doing.
 function drawFolk(folk, layout, boxes, time) {
   const isCat = !folk.info.person;
-  const height = FOLK_HEIGHT[isCat ? "cat" : "person"] * layout.art;
+  const height = FOLK_HEIGHT[isCat ? "cat" : "person"] * layout.art * (folk.info.tall || 1);
   let x = layout.left + folk.x * layout.roomWidth;
   let bottom = layout.floorTop + folk.y * layout.floorHeight;
   let row, column, show = 1;
@@ -6390,7 +6521,7 @@ function drawFolk(folk, layout, boxes, time) {
     else { row = CAT_ROWS.sit; column = (time + folk.info.cat * 1300) % 3500 < 180 ? 1 : 0; }   // blinks
   } else {
     // Standing. (Smooching or petting a cat? Then facing them.)
-    row = PERSON_ROWS[["smooch", "chat", "pet"].includes(folk.doing) ? folk.facing : "down"];
+    row = PERSON_ROWS[["smooch", "chat", "flowers", "pet"].includes(folk.doing) ? folk.facing : "down"];
     column = 0;
   }
 
@@ -6415,6 +6546,14 @@ function drawFolk(folk, layout, boxes, time) {
     }
   }
   if (folk.doing === "purr") drawLoveHearts(x, drawn.top, time, 2);
+  if (folk.doing === "flowers" && folk.info.id === "jacob" && folk.with) {
+    // The bouquet, held out between them.
+    const other = folkById(folk.with.id);
+    const middle = (x + layout.left + other.x * layout.roomWidth) / 2;
+    const size = Math.max(1, 4.5 * layout.art);
+    drawSpriteScaled(BOUQUET, BOUQUET_COLORS, middle - 2.5 * size, drawn.top + drawn.height * 0.42 - 3.5 * size, size);
+    drawLoveHearts(middle, drawn.top, time, 2);
+  }
   if (folk.doing === "using" && !folk.goal.nap && folk.info.person) {
     const partner = state.folks.find(other => other !== folk && other.info.person);
     const item = state.house.items.find(other => other.id === folk.goal.itemId);
@@ -6426,8 +6565,8 @@ function drawFolk(folk, layout, boxes, time) {
   }
 
   // Clicking them: a heart (and a meow from the cats).
-  hitBoxes.push({ left: drawn.left, top: drawn.top, right: drawn.left + drawn.width, bottom: drawn.top + drawn.height,
-                  onClick: () => petFolk(folk) });
+  houseHitBox({ left: drawn.left, top: drawn.top, right: drawn.left + drawn.width, bottom: drawn.top + drawn.height,
+                onClick: () => petFolk(folk) });
   if (folk.petted > 0) {
     const rise = (1.5 - folk.petted) * 10;
     drawPixels(HEART, Math.round(x - 7), Math.round(drawn.top - 16 - rise), 2, COLORS.heart);
@@ -7763,7 +7902,17 @@ function scrollableList() {
 
 // The mouse wheel scrolls the house's shop.
 canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
-  if (state.window !== "house" || !state.houseMaxScroll) return;
+  if (state.window !== "house") return;
+  const space = houseSpace;
+  if (space && state.mouse.x >= space.left && state.mouse.x <= space.right && state.mouse.y >= space.top && state.mouse.y <= space.bottom) {
+    // Over the house: move around it (sideways with shift, or a sideways swipe).
+    event.preventDefault();
+    const sideways = event.shiftKey ? event.deltaY : event.deltaX;
+    state.houseCameraGoal.x += sideways * 0.0008;
+    state.houseCameraGoal.y += (event.shiftKey ? 0 : event.deltaY) * 0.0008;
+    return;
+  }
+  if (!state.houseMaxScroll) return;
   event.preventDefault();
   state.houseScroll = keepBetween(state.houseScroll + event.deltaY * 0.5, 0, state.houseMaxScroll);
 }), { passive: false });
