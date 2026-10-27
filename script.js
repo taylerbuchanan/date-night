@@ -4726,8 +4726,10 @@ const STARTING_COINS = 100;
 // How the room is laid out. There's no grid: furniture goes anywhere you drop it.
 const HOUSE_WALL = 0.4;        // how much of the room's height is wall (the rest is floor)
 const HOUSE_SIDEBAR = 118;     // how wide the shop is
-// How big the furniture pictures are drawn. Bigger number = bigger furniture.
+// How big everything in the house is drawn (furniture, you two, and the cats).
 const HOUSE_ART_SIZE = 1;
+// How big the furniture is next to you two and the cats. Bigger number = bigger furniture.
+const FURNITURE_SIZE = 1.3;
 
 // The whole house, seen from above, like a floor plan. Everything is measured in squares
 // ("tiles"). A person is about 4 or 5 tiles tall.
@@ -5194,13 +5196,13 @@ function furnitureSize(type, art, facing = "front") {
   const picture = FURNITURE_PICTURES[type];
   const kind = FURNITURE[type];
   if (!picture.naturalWidth) {                                     // still loading
-    const guess = (kind.width || 60) * art;
+    const guess = (kind.width || 60) * art * FURNITURE_SIZE;
     return { width: guess, height: guess };
   }
   // "width" says how wide it is from the front; otherwise "size" says how much to grow or
   // shrink the picture. The other sides are shrunk the same amount (their pictures are
   // already the same height as the front one).
-  const scale = art * (kind.width ? kind.width / picture.naturalWidth : (kind.size || 1));
+  const scale = art * FURNITURE_SIZE * (kind.width ? kind.width / picture.naturalWidth : (kind.size || 1));
   // A rug turned long ways is spun flat on the floor: narrower, and reaching further
   // back (see RUG_LONG).
   if (kind.rug && (facing === "right" || facing === "left")) {
@@ -6146,6 +6148,9 @@ function posePicture(who, pose) {
   }
   return POSE_PICTURES[name];
 }
+
+// Load them all right away, so nobody shows up in the wrong picture while one is loading.
+FOLKS.filter(info => info.person).forEach(info => Object.keys(POSES).forEach(pose => posePicture(info.sheet, pose)));
 
 // Draws a sitting or lying pose, centered on x, with its bottom on "bottom". "size" is its
 // height (sitting) or width (lying). Mirrored = flipped left to right.
