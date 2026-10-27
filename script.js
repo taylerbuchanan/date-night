@@ -4533,7 +4533,93 @@ const QUIZ_QUESTIONS = [
   "want to cuddle all day?",
   "be the big spoon?",
   "spend all their money on something cute?",
+  // (New ones go at the end, so quizzes already started still show the right questions.)
+  "steal the blankets?",
+  "get scared during a horror game?",
+  "rage quit a game?",
+  "fall in love with a fictional character?",
+  "cry over a sad song?",
+  "text \"goodnight\" and then keep talking?",
+  "send a voice memo instead of texting?",
+  "take 100 selfies to get one good one?",
+  "get distracted by a cat mid-sentence?",
+  "eat breakfast for dinner?",
+  "order the same thing every time?",
+  "try a weird food first?",
+  "burn the toast?",
+  "sing in the shower?",
+  "dance in the kitchen?",
+  "make a playlist for the other?",
+  "know all the words to an emo song?",
+  "wear the other's hoodie?",
+  "fall asleep mid-conversation?",
+  "be the first one awake?",
+  "snooze the alarm five times?",
+  "get lost in a new city?",
+  "pack way too much for a trip?",
+  "forget their charger?",
+  "cry at the airport?",
+  "plan the whole trip?",
+  "count down the days until the next visit?",
+  "screenshot a cute message?",
+  "reread old messages?",
+  "get jealous of a cat?",
+  "spoil the cats with treats?",
+  "adopt another pet without asking?",
+  "name a plant?",
+  "kill a plant?",
+  "binge a whole show in one night?",
+  "spoil the ending of a movie?",
+  "pick the movie?",
+  "talk during a movie?",
+  "buy matching things?",
+  "write a love letter?",
+  "remember an anniversary?",
+  "make the first move?",
+  "blush when complimented?",
+  "say something cheesy?",
+  "laugh so hard they can't breathe?",
+  "do a dramatic sigh?",
+  "lose their phone while holding it?",
+  "leave a message on read by accident?",
+  "start a new hobby and quit it?",
+  "spend hours customizing a game character?",
+  "win at Connect 4?",
+  "cheat at a board game?",
+  "be a sore loser?",
+  "stay calm in a crisis?",
+  "kill a spider?",
+  "scream at a bug?",
+  "get a tattoo on a whim?",
+  "dye their hair a crazy color?",
+  "wear all black?",
+  "go to a concert and lose their voice?",
+  "cry happy tears?",
+  "want to move in together first?",
+  "say \"I miss you\" first?",
+  "fall asleep on the couch?",
+  "eat the last slice of pizza?",
+  "be the better cook?",
+  "make the bed?",
+  "leave dishes in the sink?",
+  "get a midnight snack?",
+  "be grumpy in the morning?",
+  "give the best hugs?",
 ];
+
+// The order the questions go in: always the same mixed-up order (so both computers agree),
+// 5 per quiz, with no repeats until every question has been asked once.
+function quizQuestionsForRound(round) {
+  const order = QUIZ_QUESTIONS.map((question, number) => number);
+  let seed = 7;
+  for (let n = order.length - 1; n > 0; n--) {
+    seed = (seed * 9301 + 49297) % 233280;               // (a simple "random" that's the same every time)
+    const other = Math.floor(seed / 233280 * (n + 1));
+    [order[n], order[other]] = [order[other], order[n]];
+  }
+  const start = ((round - 1) * 5) % order.length;
+  return [0, 1, 2, 3, 4].map(step => order[(start + step) % order.length]);
+}
 
 state.matches = {};   // the Tic-tac-toe and Connect 4 games (from Firebase)
 state.quiz = null;    // the Couples quiz (from Firebase)
@@ -6041,12 +6127,12 @@ function dropSpot(board, column) {
 async function newQuiz() {
   if (blockedInPreview()) return;
   playSound("click");
-  // Pick 5 different questions at random.
-  const numbers = QUIZ_QUESTIONS.map((question, number) => number).sort(() => Math.random() - 0.5).slice(0, 5);
+  // The next 5 questions (see quizQuestionsForRound).
+  const round = ((state.quiz && state.quiz.round) || 0) + 1;
   try {
     await database.collection("quiz").doc("current").set({
-      round: ((state.quiz && state.quiz.round) || 0) + 1,
-      questions: numbers,
+      round,
+      questions: quizQuestionsForRound(round),
       [`answers${YOUR_NAME}`]: null,
       [`answers${RECIPIENT_NAME}`]: null,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
