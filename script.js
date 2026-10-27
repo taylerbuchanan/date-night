@@ -5057,11 +5057,11 @@ const FLOORS = {
   bluecarpet: { name: "Powder blue carpet", price: 40, colors: ["#9DB0D2", "#9DB0D2"], picture: "bluecarpet" },
 };
 
-// Everything in the shop costs this much of the price written above (0.35 = about a third,
-// 1 = the full price). Prices are rounded to 5 coins, and nothing costs less than 5.
-const PRICE_SCALE = 0.35;
+// Everything in the shop costs this much of the price written above (0 = everything's
+// free, 0.35 = about a third, 1 = the full price). Prices are rounded to 5 coins.
+const PRICE_SCALE = 0;
 [...Object.values(FURNITURE), ...Object.values(WALLPAPERS), ...Object.values(FLOORS)].forEach(thing => {
-  if (thing.price) thing.price = Math.max(5, Math.round(thing.price * PRICE_SCALE / 5) * 5);
+  if (thing.price) thing.price = PRICE_SCALE ? Math.max(5, Math.round(thing.price * PRICE_SCALE / 5) * 5) : 0;
 });
 
 // Load the wallpaper and floor tiles.
@@ -5836,7 +5836,7 @@ function lookPicture(look) {
 function shopCards(house) {
   const page = SHOP_PAGES[state.shopPage].id;
   if (page !== "looks") {
-    return Object.entries(FURNITURE).filter(([, kind]) => kind.price > 0 && kind.shop === page).map(([type, kind]) => ({
+    return Object.entries(FURNITURE).filter(([, kind]) => kind.shop === page).map(([type, kind]) => ({
       label: kind.name, price: kind.price, picture: cardPicture(type), onClick: () => buyFurniture(type),
     }));
   }
@@ -6569,7 +6569,7 @@ function drawFolk(folk, layout, boxes, time) {
       } else if (!seat.sleepy) {
         const pose = place.facing === "down" ? "sit" : place.facing === "up" ? "sitBack" : "sitLeft";
         // Feet on the floor in front of it (or, behind it, mostly hidden by it).
-        const feet = place.behind ? box.top + box.height * 0.92 : box.top + box.height + 1;
+        const feet = place.behind ? box.top + box.height * 0.5 : box.top + box.height + 1;
         posed = drawPose(who, pose, x, feet, height * SIT_SIZE, false, place.facing === "right");
       }
       if (seat.sleepy) {
