@@ -4731,15 +4731,18 @@ const HOUSE_ART_SIZE = 1;
 
 // The rooms, in order from left to right (like they're next to each other). The arrows
 // go between them, and you two and the cats wander from one room into the next.
-// TO ADD A ROOM: add a line with a new id (one word, never change it later) and a name.
+// TO ADD A ROOM: add a line with a new id (one word, never change it later), a name, and
+// how wide it is (1 = the whole window, 0.5 = half). Small rooms like the bathroom are
+// narrower, and you can see a bit of the rooms next door on each side.
+// "outside" means it has no roof (it's drawn green on the little house map).
 const HOUSE_ROOMS = [
-  { id: "living", name: "Living room" },
-  { id: "kitchen", name: "Kitchen" },
-  { id: "bedroom", name: "Bedroom" },
-  { id: "bathroom", name: "Bathroom" },
-  { id: "game", name: "Game room" },
-  { id: "laundry", name: "Laundry" },
-  { id: "patio", name: "Patio" },
+  { id: "living", name: "Living room", width: 1 },
+  { id: "kitchen", name: "Kitchen", width: 0.85 },
+  { id: "bedroom", name: "Bedroom", width: 0.85 },
+  { id: "bathroom", name: "Bathroom", width: 0.55 },
+  { id: "game", name: "Game room", width: 0.8 },
+  { id: "laundry", name: "Laundry", width: 0.5 },
+  { id: "patio", name: "Patio", width: 0.75, outside: true },
 ];
 state.houseRoom = 0;    // which room you're looking at (0 = the first one)
 state.shopPage = 0;     // which page of the shop is showing (see SHOP_PAGES)
@@ -4756,18 +4759,24 @@ function itemRoom(item) {
   return item.room || HOUSE_ROOMS[0].id;
 }
 
-// Each room's wallpaper and floor. They're saved as a list, like
-// { living: "pink", bedroom: "blue" }. (A house from before rooms has just one, like
-// "pink", for every room.)
-function roomLook(saved, room, fallback) {
-  if (typeof saved === "string") return saved;
-  return (saved && saved[room]) || fallback;
+// Each room's wallpaper and floor. They're saved as one bit of text, like
+// "living:pink,bedroom:blue" (plain text always gets past the database's rules).
+// A house from before rooms has just one, like "pink", for every room. (And for a little
+// while they were saved as a list, like { living: "pink" }, so that works too.)
+function readRoomLooks(saved) {
+  if (saved && typeof saved === "object") return { ...saved };
+  if (typeof saved !== "string" || !saved) return {};
+  if (!saved.includes(":")) return Object.fromEntries(HOUSE_ROOMS.map(other => [other.id, saved]));
+  return Object.fromEntries(saved.split(",").map(pair => pair.split(":")));
 }
-// The saved list, with this room changed to "key".
+function roomLook(saved, room, fallback) {
+  return readRoomLooks(saved)[room] || fallback;
+}
+// The saved text, with this room changed to "key".
 function changeRoomLook(saved, room, key) {
-  const looks = typeof saved === "string" ? Object.fromEntries(HOUSE_ROOMS.map(other => [other.id, saved])) : { ...(saved || {}) };
+  const looks = readRoomLooks(saved);
   looks[room] = key;
-  return looks;
+  return Object.entries(looks).map(([other, look]) => `${other}:${look}`).join(",");
 }
 
 // The colors for the little house icon (each letter is one color).
@@ -5208,23 +5217,22 @@ function drawHouse(inside, time) {
   // (With the shop hidden, the room gets the whole window.)
   const shopRoom = state.houseShopHidden ? 0 : HOUSE_SIDEBAR + 2;
   const space = { left: inside.left + 6, top: inside.top + 6, right: inside.right - shopRoom - 6, bottom: inside.bottom - 6 };
-  const roomWidth = space.right - space.left, roomHeight = space.bottom - space.top;
-  const wallHeight = Math.round(roomHeight * HOUSE_WALL);
   const sidebar = { left: inside.right - HOUSE_SIDEBAR - 2, top: inside.top + 4, right: inside.right - 4, bottom: inside.bottom - 4 };
-  const layout = houseLayout = {
-    left: space.left, wallTop: space.top, wallHeight, floorTop: space.top + wallHeight,
-    floorHeight: roomHeight - wallHeight, roomWidth, roomHeight, sidebar,
-    // How much the pictures are shrunk, so everything fits this room's size.
-    art: roomWidth / 560 * HOUSE_ART_SIZE,
-  };
+  // Where every room goes on the screen (each room is its own size, see HOUSE_ROOMS).
+  const layouts = {};
+  HOUSE_ROOMS.forEach(other => { layouts[other.id] = roomLayout(other, space, sidebar); });
   const room = currentRoomId();
+  const layout = houseLayout = layouts[room];
+  const { roomWidth, roomHeight, wallHeight } = layout;
+
+  // The little map of the house, up in the window's title bar.
+  drawHouseMap();
+
+  // A smaller room has the rooms next door peeking in on each side.
+  drawNextDoor(house, layout);
 
   // This room's wall and floor.
-  const tile = roomWidth / 9;
-  fillPattern(WALLPAPERS[roomLook(house.wallpaper, room, "pink")] || WALLPAPERS.pink, layout.left, layout.wallTop, roomWidth, wallHeight, tile / 2);
-  fillPattern(FLOORS[roomLook(house.floor, room, "wood")] || FLOORS.wood, layout.left, layout.floorTop, roomWidth, layout.floorHeight, tile);
-  ctx.fillStyle = "#B07A52";                                  // the baseboard
-  ctx.fillRect(layout.left, layout.floorTop - 3, roomWidth, 4);
+  drawWallAndFloor(house, room, layout.left, roomWidth, layout);
 
   ctx.save();
   ctx.beginPath();
@@ -5238,12 +5246,13 @@ function drawHouse(inside, time) {
   const dragId = houseDrag && houseDrag.moved ? houseDrag.item.id : null;
   const boxes = {};
   allPlaced.forEach(item => {
-    const spot = item.id === dragId ? houseDrag.spot : clampSpot(item, itemSpot(item), layout);
-    boxes[item.id] = furnitureBox(item, layout, spot);
+    const itsLayout = layouts[itemRoom(item)] || layout;      // (each room is a different size)
+    const spot = item.id === dragId ? houseDrag.spot : clampSpot(item, itemSpot(item), itsLayout);
+    boxes[item.id] = furnitureBox(item, itsLayout, spot);
   });
 
   // You two and the cats decide what to do next, and move a little (in every room).
-  updateFolks(layout, allPlaced, boxes, time);
+  updateFolks(layouts, allPlaced, boxes, time);
 
   // Draw everything from back to front: rugs, then wall things, then furniture and
   // people in order of how far forward they are (so things in front cover things behind).
@@ -5261,6 +5270,7 @@ function drawHouse(inside, time) {
   ctx.strokeStyle = COLORS.text;
   ctx.lineWidth = 2;
   ctx.strokeRect(layout.left, layout.wallTop, roomWidth, roomHeight);
+  ctx.strokeRect(space.left, space.top, space.right - space.left, space.bottom - space.top);
 
   drawRoomArrows(layout);
   if (state.houseShopHidden) {
@@ -5271,6 +5281,100 @@ function drawHouse(inside, time) {
   } else {
     drawHouseShop(house, sidebar);
   }
+}
+
+// Where one room goes on the screen: the same height as the others, but only as wide as
+// that room is (see HOUSE_ROOMS), in the middle.
+function roomLayout(room, space, sidebar) {
+  const fullWidth = space.right - space.left, roomHeight = space.bottom - space.top;
+  const wallHeight = Math.round(roomHeight * HOUSE_WALL);
+  const roomWidth = Math.round(fullWidth * (room.width || 1));
+  return {
+    left: space.left + Math.round((fullWidth - roomWidth) / 2), wallTop: space.top, wallHeight,
+    floorTop: space.top + wallHeight, floorHeight: roomHeight - wallHeight, roomWidth, roomHeight, sidebar, space,
+    // How much the pictures are shrunk. It's the same in every room (it goes by the whole
+    // window), so a small room really looks small.
+    art: fullWidth / 560 * HOUSE_ART_SIZE,
+    tile: fullWidth / 9,     // how big the wallpaper and floor patterns are
+  };
+}
+
+// A room's wallpaper, floor, and baseboard, drawn from "left" to "left + width".
+function drawWallAndFloor(house, room, left, width, layout) {
+  fillPattern(WALLPAPERS[roomLook(house.wallpaper, room, "pink")] || WALLPAPERS.pink, left, layout.wallTop, width, layout.wallHeight, layout.tile / 2);
+  fillPattern(FLOORS[roomLook(house.floor, room, "wood")] || FLOORS.wood, left, layout.floorTop, width, layout.floorHeight, layout.tile);
+  ctx.fillStyle = "#B07A52";                                  // the baseboard
+  ctx.fillRect(left, layout.floorTop - 3, width, 4);
+}
+
+// On each side of a smaller room: a bit of the room next door (a little darker), with a
+// thick wall in between. Past the ends of the house, it's the yard.
+function drawNextDoor(house, layout) {
+  const { space } = layout;
+  [-1, 1].forEach(direction => {
+    const left = direction < 0 ? space.left : layout.left + layout.roomWidth;
+    const right = direction < 0 ? layout.left : space.right;
+    const width = right - left;
+    if (width < 2) return;                                    // this room fills the window
+    const next = HOUSE_ROOMS[state.houseRoom + direction];
+    if (next) {
+      drawWallAndFloor(house, next.id, left, width, layout);
+      ctx.fillStyle = "rgba(69, 40, 74, 0.28)";               // a little darker
+      ctx.fillRect(left, layout.wallTop, width, layout.roomHeight);
+    } else {
+      ctx.fillStyle = "#D6ECFE";                              // the sky
+      ctx.fillRect(left, layout.wallTop, width, layout.wallHeight);
+      ctx.fillStyle = "#A9D49A";                              // the grass
+      ctx.fillRect(left, layout.floorTop, width, layout.floorHeight);
+      ctx.fillStyle = "#8DBF7E";
+      ctx.fillRect(left, layout.floorTop, width, 3);
+    }
+    // The wall between the rooms (you're seeing it cut in half, like a dollhouse).
+    const wallLeft = direction < 0 ? right - 7 : left;
+    ctx.fillStyle = "#EFE2D2";
+    ctx.fillRect(wallLeft, layout.wallTop, 7, layout.roomHeight);
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(wallLeft, layout.wallTop, 7, layout.roomHeight);
+  });
+}
+
+// A tiny map of the whole house in the window's title bar: one box per room (as wide as
+// the room is) under a roof. The room you're in is pink. Click a box to go to that room.
+function drawHouseMap() {
+  const { left, right, top } = windowBox();
+  const total = HOUSE_ROOMS.reduce((sum, room) => sum + room.width, 0);
+  const mapWidth = Math.min(150, right - left - 250);
+  if (mapWidth < 60) return;                                  // the window's too small for it
+  const unit = mapWidth / total;
+  let x = Math.round((left + right) / 2 - mapWidth / 2);
+  const boxTop = top + 11, boxBottom = top + 19;
+
+  // The roof, over every room that's indoors.
+  const indoors = HOUSE_ROOMS.filter(room => !room.outside).reduce((sum, room) => sum + room.width, 0) * unit;
+  ctx.fillStyle = COLORS.cream;
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 3, boxTop);
+  ctx.lineTo(x + 10, top + 3);
+  ctx.lineTo(x + indoors - 10, top + 3);
+  ctx.lineTo(x + indoors + 3, boxTop);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  HOUSE_ROOMS.forEach((room, number) => {
+    const width = room.width * unit;
+    const box = { left: x, top: boxTop, right: x + width, bottom: boxBottom, id: `house:map:${number}`,
+                  onClick: () => { if (number !== state.houseRoom) goToRoom(number); } };
+    hitBoxes.push(box);
+    const here = number === state.houseRoom;
+    ctx.fillStyle = here ? COLORS.heart : state.hoverId === box.id ? COLORS.white : room.outside ? "#A9D49A" : COLORS.cream;
+    ctx.fillRect(box.left, box.top, width, boxBottom - boxTop);
+    ctx.strokeRect(box.left, box.top, width, boxBottom - boxTop);
+    x += width;
+  });
 }
 
 // The room's name at the top, and arrows on the sides to the rooms next door.
@@ -5288,14 +5392,32 @@ function drawRoomArrows(layout) {
   [-1, 1].forEach(direction => {
     const next = state.houseRoom + direction;
     if (next < 0 || next >= HOUSE_ROOMS.length) return;     // no room that way
-    const x = direction < 0 ? layout.left + 18 : layout.left + layout.roomWidth - 18;
-    const box = { left: x - 13, top: y - 20, right: x + 13, bottom: y + 20, id: `house:arrow:${direction}`,
-                  onClick: () => goToRoom(next) };
+    // How much of the room next door shows on this side. If there's enough, the arrow goes
+    // there, and that whole bit works like the arrow. If not, it's just inside this room.
+    const roomRight = layout.left + layout.roomWidth;
+    const peek = direction < 0 ? layout.left - layout.space.left : layout.space.right - roomRight;
+    const inDoorway = peek >= 36;
+    let x = direction < 0 ? layout.left + 18 : roomRight - 18;
+    let box = { left: x - 13, top: y - 20, right: x + 13, bottom: y + 20 };
+    if (inDoorway) {
+      x = direction < 0 ? layout.left - peek / 2 - 3 : roomRight + peek / 2 + 3;
+      box = direction < 0 ? { left: layout.space.left, right: layout.left } : { left: roomRight, right: layout.space.right };
+      box.top = layout.wallTop;
+      box.bottom = layout.wallTop + layout.roomHeight;
+    }
+    Object.assign(box, { id: `house:arrow:${direction}`, onClick: () => goToRoom(next) });
     layout.arrows.push({ direction, box });
     hitBoxes.push(box);
     // Pink when the mouse is on it (or when furniture is dragged onto it).
     const lit = state.hoverId === box.id || (houseDrag && houseDrag.overArrow === direction);
-    steppedBox(box.left, box.top, box.right, box.bottom, 2, lit ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
+    steppedBox(x - 13, y - 20, x + 13, y + 20, 2, lit ? COLORS.titleBar : COLORS.white, COLORS.text, 1.5);
+    // The next room's name under the arrow (if it fits).
+    ctx.font = FONTS.small;
+    const nameWidth = ctx.measureText(HOUSE_ROOMS[next].name).width;
+    if (inDoorway && nameWidth + 14 < peek) {
+      steppedBox(x - nameWidth / 2 - 5, y + 26, x + nameWidth / 2 + 5, y + 42, 2, COLORS.cream, COLORS.text, 1.5);
+      write(HOUSE_ROOMS[next].name, x, y + 34.5, FONTS.small, COLORS.text);
+    }
     // The little triangle, pointing that way.
     ctx.fillStyle = COLORS.text;
     ctx.beginPath();
@@ -5310,8 +5432,8 @@ function drawRoomArrows(layout) {
 function goToRoom(number) {
   playSound("click");
   state.houseRoom = number;
-  // The shop flips to this room's page.
-  state.shopPage = number;
+  // The shop flips to this room's page (unless you're picking wallpaper and floors).
+  if (SHOP_PAGES[state.shopPage].id !== "looks") state.shopPage = number;
   state.houseScroll = 0;
 }
 
@@ -5445,13 +5567,25 @@ function shopCards(house) {
       label: kind.name, price: kind.price, picture: cardPicture(type), onClick: () => buyFurniture(type),
     }));
   }
-  const walls =Object.entries(WALLPAPERS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
-    label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("wallpaper", key),
-  }));
-  const floors = Object.entries(FLOORS).filter(([key, look]) => look.price && !house.owned.includes(key)).map(([key, look]) => ({
-    label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook("floor", key),
-  }));
-  return [...walls, ...floors];
+  // Every wallpaper, then every floor. (The ones you own are free to use in any room.)
+  return [
+    ...Object.entries(WALLPAPERS).map(([key, look]) => lookCard(house, "wallpaper", key, look)),
+    ...Object.entries(FLOORS).map(([key, look]) => lookCard(house, "floor", key, look)),
+  ];
+}
+
+// A card for a wallpaper or floor. If you own it, clicking puts it in the room you're
+// looking at (the other rooms keep theirs). If not, clicking buys it first.
+function lookCard(house, which, key, look) {
+  const room = currentRoomId();
+  if (!house.owned.includes(key) && look.price) {
+    return { label: look.name, price: look.price, picture: lookPicture(look), onClick: () => buyLook(which, key) };
+  }
+  return {
+    label: look.name, picture: lookPicture(look),
+    current: roomLook(house[which], room, which === "wallpaper" ? "pink" : "wood") === key,     // the one up now
+    onClick: () => { playSound("click"); saveHouse({ [which]: changeRoomLook(house[which], room, key) }); },
+  };
 }
 
 function mineCards(house) {
@@ -5459,16 +5593,9 @@ function mineCards(house) {
     label: FURNITURE[item.type].name, picture: cardPicture(item.type), onClick: () => placeStored(item),
   }));
   // Wallpapers and floors you own (clicking one puts it in the room you're looking at).
-  const room = currentRoomId();
   const looks = [
-    ...Object.entries(WALLPAPERS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
-      label: look.name, picture: lookPicture(look), current: roomLook(house.wallpaper, room, "pink") === key,
-      onClick: () => { playSound("click"); saveHouse({ wallpaper: changeRoomLook(house.wallpaper, room, key) }); },
-    })),
-    ...Object.entries(FLOORS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => ({
-      label: look.name, picture: lookPicture(look), current: roomLook(house.floor, room, "wood") === key,
-      onClick: () => { playSound("click"); saveHouse({ floor: changeRoomLook(house.floor, room, key) }); },
-    })),
+    ...Object.entries(WALLPAPERS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => lookCard(house, "wallpaper", key, look)),
+    ...Object.entries(FLOORS).filter(([key]) => house.owned.includes(key)).map(([key, look]) => lookCard(house, "floor", key, look)),
   ];
   return [...stored, ...looks];
 }
@@ -5676,13 +5803,15 @@ function spotTaken(itemId, spot, except) {
   return state.folks.some(folk => folk !== except && folk.goal && folk.goal.itemId === itemId && folk.goal.spot === spot);
 }
 
-function updateFolks(layout, placed, boxes, time) {
+// ("layouts" has where each room is on the screen, since every room is a different size.)
+function updateFolks(layouts, placed, boxes, time) {
   if (!state.folks) state.folks = makeFolks();
   const seconds = folksLastTime === null ? 0 : Math.min(0.1, (time - folksLastTime) / 1000);
   folksLastTime = time;
   const byId = Object.fromEntries(placed.map(item => [item.id, item]));
 
   state.folks.forEach(folk => {
+    const layout = layouts[folk.room] || layouts[HOUSE_ROOMS[0].id];     // the room they're in
     folk.petted = Math.max(0, folk.petted - seconds);
     // The furniture they were using got moved, put away, or taken to another room? They get up.
     const using = folk.goal && byId[folk.goal.itemId];
