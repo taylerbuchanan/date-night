@@ -4773,9 +4773,15 @@ const HOUSE_DOOR_SIZE = 3;       // how wide a doorway is, in tiles
 // How roomy the house is: how much bigger the rooms are than the furniture and people.
 // (Bigger = more space in every room. 1 = a person is about 4.6 tiles tall.)
 const HOUSE_ROOMY = 1.6;
-// How close the + and − buttons zoom in. 1 = the whole house fits in the window.
-const HOUSE_ZOOMS = [1, 1.6, 2.3];
-state.houseZoom = 1;                     // which of HOUSE_ZOOMS (it starts zoomed in a bit)
+// How far you can zoom in and out (with the mouse wheel or the + and − buttons).
+// 1 = the whole house fits in the window.
+const HOUSE_ZOOM_OUT = 1, HOUSE_ZOOM_IN = 2.6;
+state.houseZoom = 1.6;                   // how zoomed in it is (it starts zoomed in a bit)
+
+// Zooms in (bigger number) or out (smaller number), staying between the two limits.
+function zoomHouse(times) {
+  state.houseZoom = keepBetween(state.houseZoom * times, HOUSE_ZOOM_OUT, HOUSE_ZOOM_IN);
+}
 state.houseCamera = { x: 0.5, y: 0.5 };  // the middle of what you see (0 to 1 across and down the house)
 state.houseCameraGoal = { x: 0.5, y: 0.5 };   // where it's gliding to
 let houseSpace = null;                   // the part of the window the house is drawn in
@@ -5205,7 +5211,9 @@ function itemFacing(item) {
 }
 
 // The order the Turn button goes in.
-const FACINGS = ["front", "right", "back", "left"];
+// (The diagonal ones are named for which way they face: "frontleft" faces toward you and
+// to the left, "backright" faces away from you and to the right, and so on.)
+const FACINGS = ["front", "frontright", "right", "backright", "back", "backleft", "left", "frontleft"];
 
 // How much longer a rug looks when it's turned long ways (bigger = longer and skinnier).
 const RUG_LONG = 1.6;
@@ -5254,10 +5262,11 @@ function drawSpriteScaled(rows, colors, x, y, px) {
 }
 
 // The pictures of furniture from the other sides: images/furniture/back/<name>.png,
-// right/<name>.png (facing right), and left/<name>.png (facing left). They load the first
+// right/<name>.png (facing right), left/<name>.png (facing left), and the diagonal ones
+// (frontleft/, frontright/, backleft/, backright/). They load the first
 // time something is turned that way. If there's no picture of its back, one is made from
 // the front picture (the same shape, all in its main color).
-const FURNITURE_VIEWS = { back: {}, right: {}, left: {} };
+const FURNITURE_VIEWS = { back: {}, right: {}, left: {}, frontleft: {}, frontright: {}, backleft: {}, backright: {} };
 const MADE_BACKS = {};
 function facingPicture(type, facing) {
   if (facing === "front" || !FURNITURE_VIEWS[facing]) return FURNITURE_PICTURES[type];
@@ -5409,6 +5418,11 @@ function drawHouse(inside, time) {
     if (state.mouse.y < space.top + 20) goal.y -= 0.006;
     if (state.mouse.y > space.bottom - 20) goal.y += 0.006;
   }
+  // Holding W A S D (or the arrow keys) moves around too.
+  if (houseKeys.has("a") || houseKeys.has("arrowleft")) goal.x -= 0.012;
+  if (houseKeys.has("d") || houseKeys.has("arrowright")) goal.x += 0.012;
+  if (houseKeys.has("w") || houseKeys.has("arrowup")) goal.y -= 0.012;
+  if (houseKeys.has("s") || houseKeys.has("arrowdown")) goal.y += 0.012;
   state.houseCamera.x += (goal.x - state.houseCamera.x) * 0.2;
   state.houseCamera.y += (goal.y - state.houseCamera.y) * 0.2;
   // (Only draw inside the space, since the house can be bigger than it.)
@@ -5496,6 +5510,19 @@ function drawHouse(inside, time) {
   }
 }
 
+// The keys being held down that move around the house (W A S D and the arrow keys). They
+// only work while the house is the window on top (and you're not typing somewhere).
+const houseKeys = new Set();
+const HOUSE_KEYS = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"];
+window.addEventListener("keydown", event => withWindow(topWindow(), () => {
+  const key = event.key.toLowerCase();
+  if (isTypingInForm(event) || state.window !== "house" || state.game || !HOUSE_KEYS.includes(key)) return;
+  event.preventDefault();      // (so the arrow keys don't scroll the page)
+  houseKeys.add(key);
+}));
+window.addEventListener("keyup", event => houseKeys.delete(event.key.toLowerCase()));
+window.addEventListener("blur", () => houseKeys.clear());     // (let go of everything when you click away)
+
 // Adds a click spot, but only the part of it inside the house's space (things can be
 // hidden past the edges when you're zoomed in).
 function houseHitBox(box) {
@@ -5509,10 +5536,9 @@ function houseHitBox(box) {
 // (only where there's more house that way).
 function drawHouseCameraButtons(space) {
   [[-1, "−"], [1, "+"]].forEach(([change, label], number) => {
-    const next = state.houseZoom + change;
-    const can = next >= 0 && next < HOUSE_ZOOMS.length;
+    const can = change > 0 ? state.houseZoom < HOUSE_ZOOM_IN - 0.01 : state.houseZoom > HOUSE_ZOOM_OUT + 0.01;
     drawButton(space.left + 14 + number * 24, space.top + 14, 20, 20, label, can ? COLORS.white : COLORS.cream,
-               can ? COLORS.text : "#B9A9C4", () => { if (can) { playSound("click"); state.houseZoom = next; } });
+               can ? COLORS.text : "#B9A9C4", () => { if (can) { playSound("click"); zoomHouse(change > 0 ? 1.35 : 1 / 1.35); } });
   });
   const camera = state.houseCamera, goal = state.houseCameraGoal;
   const width = space.right - space.left, height = space.bottom - space.top;
@@ -5556,7 +5582,7 @@ function houseRoomLayouts(space, sidebar) {
   // Zoomed all the way out, the whole house fits. Zoomed in, it's bigger than the window,
   // and the camera says which part you see.
   const fit = Math.min((width - 12) / across, (height - 12) / down);
-  const tile = fit * HOUSE_ZOOMS[state.houseZoom];
+  const tile = fit * state.houseZoom;
   // (The camera can't go past the edges of the house.)
   const camera = state.houseCamera;
   [["x", across, width], ["y", down, height]].forEach(([key, size, view]) => {
@@ -6046,41 +6072,45 @@ const SEATS = {
 };
 // Where someone sits on a piece of furniture, the way it's turned right now:
 //   across - 0 to 1 across the picture
-//   facing - which way they face ("down", "up", "left", or "right")
-//   behind - are they behind it? (sitting on a couch that faces the wall)
-// From the side, there's only room for one person (spot 0).
+//   facing - which way they face (one of FACINGS)
+//   behind - are they behind it? (sitting on a couch that faces away from you)
 function seatSpot(item, spot) {
   const seat = SEATS[item.type], turned = itemFacing(item);
-  const opposite = { down: "up", up: "down", left: "right", right: "left" };
-  let place;
-  if (turned === "front") place = { across: seat.spots[spot], facing: seat.facing, behind: false };
-  else if (turned === "back") place = { across: 1 - seat.spots[spot], facing: opposite[seat.facing], behind: true };
-  else if (seat.facing === "down") {
-    // A couch or chair turned sideways: you sit in the middle, facing the same way it does.
-    place = { across: 0.5, facing: turned, behind: false };
+  const opposite = name => name.replace(/front|back|left|right/g, part => ({ front: "back", back: "front", left: "right", right: "left" })[part]);
+  // On a couch or chair, you face the way it faces. At a desk, you face the desk.
+  const facing = seat.facing === "down" ? turned : opposite(turned);
+  const place = { facing, behind: turned.startsWith("back") };
+  if (turned === "front" || turned === "back") {
+    place.across = turned === "back" ? 1 - seat.spots[spot] : seat.spots[spot];
+  } else if (turned === "left" || turned === "right") {
+    // From the side: one person, in the middle of a couch, or on the front side of a desk.
+    place.across = seat.facing === "down" ? 0.5 : turned === "right" ? 0.82 : 0.18;
+  } else if (seat.facing === "down") {
+    // A couch turned at an angle: the seats are a bit closer together.
+    place.across = 0.5 + (seat.spots[spot] - 0.5) * 0.6;
   } else {
-    // A desk turned sideways: you sit on its front side, facing it.
-    place = { across: turned === "right" ? 0.82 : 0.18, facing: opposite[turned], behind: false };
+    // A desk turned at an angle: you sit on its front side.
+    place.across = facing.endsWith("right") ? 0.3 : 0.7;
   }
   // Flipped furniture is mirrored, so you are too.
   if (item.flip) {
     place.across = 1 - place.across;
-    if (place.facing === "left" || place.facing === "right") place.facing = opposite[place.facing];
+    place.facing = place.facing.replace(/left|right/, side => (side === "left" ? "right" : "left"));
   }
   return place;
 }
 
-// How many people fit on it the way it's turned.
+// How many people fit on it the way it's turned. (From the side, just one.)
 function seatCount(item) {
   const turned = itemFacing(item);
-  return turned === "front" || turned === "back" ? SEATS[item.type].spots.length : 1;
+  return turned === "left" || turned === "right" ? 1 : SEATS[item.type].spots.length;
 }
 
 // Where a cat naps on a piece of furniture, 0 to 1 across the picture (the middle, if
 // it's turned sideways).
 function napAcross(item) {
   const turned = itemFacing(item);
-  let across = turned === "left" || turned === "right" ? 0.5 : NAP_SPOTS[item.type].x;
+  let across = turned === "front" || turned === "back" ? NAP_SPOTS[item.type].x : 0.5;
   if (turned === "back") across = 1 - across;
   return item.flip ? 1 - across : across;
 }
@@ -6091,6 +6121,9 @@ const POSES = {
   sit: "11",          // sitting, facing out
   sitLeft: "12",      // sitting, facing left (mirrored for facing right)
   sitBack: "14",      // sitting with your back to us
+  sitFrontLeft: "22", // sitting turned toward you and to the left (mirrored for the right)
+  sitBackRight: "23", // sitting turned away from you, to the right
+  sitBackLeft: "24",  // sitting turned away from you, to the left
   lieLeft: "41",      // lying on your back, asleep, head on the left
   lieRight: "42",     // the same, head on the right
 };
@@ -6557,20 +6590,27 @@ function drawFolk(folk, layout, boxes, time) {
       const place = seatSpot(item, folk.goal.spot);
       x = box.left + box.width * place.across;
       bottom = box.top + box.height * seat.line;
-      row = PERSON_ROWS[place.facing];
+      // (For the standing pictures, if the sitting ones haven't loaded.)
+      row = PERSON_ROWS[place.facing.startsWith("back") ? "up" : place.facing.startsWith("front") ? "down" : place.facing];
       column = 0;
       show = seat.show;
       // The real sitting and lying-down pictures (see POSES).
       const who = folk.info.sheet;
-      if (seat.sleepy && (place.facing === "left" || place.facing === "right")) {
-        // A bed turned sideways: lying down in it, head on the pillow end.
-        const head = place.facing === "right" ? "lieLeft" : "lieRight";
+      const turned = itemFacing(item);
+      if (seat.sleepy && turned !== "front" && turned !== "back") {
+        // A bed turned sideways or at an angle: lying down in it, head on the pillow end.
+        const head = turned.endsWith("right") !== !!item.flip ? "lieLeft" : "lieRight";
         posed = drawPose(who, head, box.left + box.width * 0.5, box.top + box.height * 0.66, height * LIE_SIZE, true, false);
       } else if (!seat.sleepy) {
-        const pose = place.facing === "down" ? "sit" : place.facing === "up" ? "sitBack" : "sitLeft";
+        const poses = {
+          front: ["sit", false], back: ["sitBack", false], left: ["sitLeft", false], right: ["sitLeft", true],
+          frontleft: ["sitFrontLeft", false], frontright: ["sitFrontLeft", true],
+          backleft: ["sitBackLeft", false], backright: ["sitBackRight", false],
+        };
+        const [pose, mirrored] = poses[place.facing];
         // Feet on the floor in front of it (or, behind it, mostly hidden by it).
         const feet = place.behind ? box.top + box.height * 0.5 : box.top + box.height + 1;
-        posed = drawPose(who, pose, x, feet, height * SIT_SIZE, false, place.facing === "right");
+        posed = drawPose(who, pose, x, feet, height * SIT_SIZE, false, mirrored);
       }
       if (seat.sleepy) {
         const drift = (time / 900 + folk.goal.spot * 0.5) % 1;
@@ -7967,11 +8007,9 @@ canvas.addEventListener("wheel", event => withWindow(windowUnderMouse(), () => {
   if (state.window !== "house") return;
   const space = houseSpace;
   if (space && state.mouse.x >= space.left && state.mouse.x <= space.right && state.mouse.y >= space.top && state.mouse.y <= space.bottom) {
-    // Over the house: move around it (sideways with shift, or a sideways swipe).
+    // Over the house: zoom in (wheel up) or out (wheel down).
     event.preventDefault();
-    const sideways = event.shiftKey ? event.deltaY : event.deltaX;
-    state.houseCameraGoal.x += sideways * 0.0008;
-    state.houseCameraGoal.y += (event.shiftKey ? 0 : event.deltaY) * 0.0008;
+    zoomHouse(Math.exp(-event.deltaY * 0.0015));
     return;
   }
   if (!state.houseMaxScroll) return;
@@ -8967,6 +9005,9 @@ async function popOut() {
     if (isTypingInForm(event)) return;
     window.dispatchEvent(new KeyboardEvent("keydown", { key: event.key, code: event.code, repeat: event.repeat }));
     if (event.key === " " || event.key.startsWith("Arrow")) event.preventDefault();
+  });
+  poppedOut.addEventListener("keyup", event => {
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: event.key, code: event.code }));
   });
   poppedOut.addEventListener("pointerdown", unlockSound);
 
