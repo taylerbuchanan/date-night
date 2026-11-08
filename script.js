@@ -7624,7 +7624,8 @@ function dateNightStart(dateNight) {
 DATE_NIGHT_START = dateNightStart(DATE_NIGHT);
 
 // YOUR PLAN, from Firebase (null until it loads, or if you haven't made one):
-//   { activities: [{ name, steps: [...], link }], games: [...], movies: [...] }
+//   { activities: [{ name, steps: [...], link }], games: [...], movies: [...],
+//     photos: { "Coraline": "data:image/jpeg...", ... } }   (a little photo for any wheel choice)
 // It's saved in the "datenight" collection as the doc "plan". (The rules there only allow
 // step, picks, by, and updatedAt, so the plan is tucked inside "picks" as plain text.)
 state.datePlan = null;
@@ -7634,9 +7635,17 @@ state.datePlanning = false;     // is the "Edit plan" box open?
 function readDatePlan(data) {
   const picks = data.picks || {};
   const lines = text => String(text || "").split("\n").map(line => line.trim()).filter(Boolean);
-  let activities = [];
+  let activities = [], photos = {};
   try { activities = JSON.parse(picks.activities || "[]"); } catch (problem) {}
-  return { activities, games: lines(picks.games), movies: lines(picks.movies) };
+  try { photos = JSON.parse(picks.photos || "{}"); } catch (problem) {}
+  return { activities, games: lines(picks.games), movies: lines(picks.movies), photos };
+}
+
+// The photo for a wheel choice (a loaded picture), or null if it doesn't have one.
+function choicePhoto(name) {
+  const plan = state.datePlan;
+  const src = plan && plan.photos && plan.photos[name];
+  return src ? loadedPicture(src) : null;
 }
 
 // Turns your plan into the parts of the date: the activities in order, then the game
