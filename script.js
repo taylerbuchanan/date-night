@@ -7890,7 +7890,7 @@ function drawDateNight(area, time) {
     else if (part.wheel && (!state.dateNight.picks[step] || (wheelSpin && wheelSpin.step === step))) drawWheel(area, time, part, step);
     else if (part.kind === "movie") drawCinema(area, time, step);
     else if (part.kind === "activity") drawActivityCard(area, part, step);
-    else drawGameCard(area, part, step);
+    else drawGameRoom(area, time, part, step);
   }
   ctx.restore();
 
@@ -7958,50 +7958,146 @@ function drawPartLabel(area, step, color) {
   write(`PART ${step} OF ${DATE_NIGHT.parts.length}`, (area.left + area.right) / 2, area.top + 14, FONTS.small, color);
 }
 
-// A game part: the game's name, then what to do, then buttons.
-function drawGameCard(area, part, step) {
+// A game part: the little game room (like the cinema, but for games). A neon "NOW PLAYING"
+// sign, a TV that flickers on to show the game, glowing lights on the wall, and the two of
+// you on the couch with headphones on.
+
+// The game room's colors.
+const GAME_ROOM = {
+  wall: "#221A3A", floor: "#2C2348", pink: "#F07A9C", blue: "#7FB8F0", purple: "#C9B6F2",
+  tvFrame: "#3A3152", screenOff: "#0B0912", screen: "#2A2050", cabinet: "#3D2F5C", couch: "#5A3A6E",
+};
+const TV_ON_SECONDS = 0.7;    // how long the TV takes to flicker on
+
+function drawGameRoom(area, time, part, step) {
   const middle = (area.left + area.right) / 2;
-  drawPartLabel(area, step, COLORS.text);
+  const now = performance.now();
   const name = partName(step);
   const own = Boolean(state.dateNight.picks[step]);
-  const steps = own ? [`Find ${name} on Steam (the button below searches for it)`, "Hop in a call with me", "Have fun!"]
-                    : part.steps || [];
 
-  // The card.
-  const card = { left: area.left + 30, top: area.top + 28, right: area.right - 30, bottom: area.bottom - 48 };
-  steppedBox(card.left, card.top, card.right, card.bottom, 4, COLORS.white, COLORS.text, 2);
+  // Turn the TV on the first time this step shows up on this computer (and again after a spin).
+  // (It uses the same timer as the cinema's curtains.)
+  if (curtainForStep !== step) {
+    curtainForStep = step;
+    curtainStart = now + 500;     // a little pause first
+  }
+  const on = keepBetween((now - curtainStart) / (TV_ON_SECONDS * 1000), 0, 1);
 
-  // The game's banner picture across the top (if there is one, and he didn't pick something else).
-  // (A game from the wheel uses the photo you gave it.)
-  const banner = part.picture && !own ? loadedPicture(part.picture) : (part.wheel ? choicePhoto(name) : null);
-  if (banner) {
-    const height = 58, width = height * banner.naturalWidth / banner.naturalHeight;
-    const left = (card.left + card.right) / 2 - width / 2;
-    ctx.save();
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(banner, left, card.top + 10, width, height);
+  // The room: the wall, and the floor along the bottom.
+  ctx.fillStyle = GAME_ROOM.wall;
+  ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+  ctx.fillStyle = GAME_ROOM.floor;
+  ctx.fillRect(area.left, area.bottom - 66, area.right - area.left, 66);
+  drawPartLabel(area, step, GAME_ROOM.purple);
+
+  // The TV (it's 16 wide for every 9 tall, like a real one).
+  const screen = { left: middle - 92, top: area.top + 76, right: middle + 92, bottom: area.top + 76 + 104 };
+
+  // LED lights in a strip across the wall behind the TV, slowly changing colors.
+  const ledColors = [GAME_ROOM.pink, GAME_ROOM.purple, GAME_ROOM.blue];
+  for (let x = area.left + 4; x < area.right - 4; x += 10) {
+    ctx.fillStyle = ledColors[Math.floor(time / 600 + (x - area.left) / 40) % ledColors.length];
+    ctx.fillRect(x, screen.top + 30, 6, 2);
+  }
+  steppedBox(screen.left - 6, screen.top - 6, screen.right + 6, screen.bottom + 6, 3, GAME_ROOM.tvFrame, "#120A15", 2);
+  ctx.fillStyle = GAME_ROOM.screenOff;
+  ctx.fillRect(screen.left, screen.top, screen.right - screen.left, screen.bottom - screen.top);
+  drawTVScreen(screen, part, name, own, on, time);
+  // The little power light under the screen (red while off, green once it's on).
+  ctx.fillStyle = on > 0 ? "#7CE38B" : "#E35D6A";
+  ctx.fillRect(screen.right - 4, screen.bottom + 2, 3, 2);
+
+  // The neon "NOW PLAYING" sign above the TV (its border flickers between pink and blue).
+  const sign = { left: middle - 110, top: area.top + 34, right: middle + 110, bottom: area.top + 62 };
+  const flicker = Math.floor(time / 700) % 2 === 0;
+  steppedBox(sign.left, sign.top, sign.right, sign.bottom, 3, "#14101F", flicker ? GAME_ROOM.pink : GAME_ROOM.blue, 2);
+  write("NOW PLAYING", middle, sign.top + 8, FONTS.tag, flicker ? GAME_ROOM.blue : GAME_ROOM.pink);
+  const title = on >= 1 ? name : "? ? ?";
+  write(title, middle, sign.top + 20, fontThatFits(title, sign.right - sign.left - 16), COLORS.white);
+
+  // The TV stand, with a game console on it (its light blinks).
+  const stand = { left: middle - 120, top: screen.bottom + 10, right: middle + 120, bottom: screen.bottom + 26 };
+  ctx.fillStyle = GAME_ROOM.cabinet;
+  ctx.fillRect(stand.left, stand.top, stand.right - stand.left, stand.bottom - stand.top);
+  ctx.fillStyle = "#120A15";
+  ctx.fillRect(stand.left, stand.bottom - 2, stand.right - stand.left, 2);
+  ctx.fillRect(middle - 4, screen.bottom + 6, 8, 4);          // the TV's neck
+  ctx.fillStyle = "#E9E3F5";
+  ctx.fillRect(middle - 58, stand.top + 4, 30, 8);            // the console
+  ctx.fillStyle = Math.floor(time / 500) % 2 === 0 ? GAME_ROOM.blue : "#3A5A7A";
+  ctx.fillRect(middle - 32, stand.top + 7, 2, 2);
+
+  // The couch, with the two of you from behind (wearing headphones).
+  // (The heads go first, so the couch's back covers their bottoms.)
+  const couchTop = area.bottom - 64;
+  [[middle - 21, GAME_ROOM.pink], [middle + 21, GAME_ROOM.blue]].forEach(([x, color]) => {
+    ctx.fillStyle = "#120A15";
+    ctx.beginPath();
+    ctx.arc(x, couchTop - 5, 11, 0, Math.PI * 2);
+    ctx.fill();
+    // The headphones: a band over the top, and a cup on each side.
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(x, couchTop - 5, 13.5, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 16, couchTop - 8, 5, 9);
+    ctx.fillRect(x + 11, couchTop - 8, 5, 9);
+  });
+  steppedBox(middle - 84, couchTop, middle + 84, couchTop + 20, 4, GAME_ROOM.couch, "#120A15", 1.5);
+  // The couch's arms.
+  steppedBox(middle - 98, couchTop + 5, middle - 80, couchTop + 22, 3, GAME_ROOM.couch, "#120A15", 1.5);
+  steppedBox(middle + 80, couchTop + 5, middle + 98, couchTop + 22, 3, GAME_ROOM.couch, "#120A15", 1.5);
+  // A little heart floating between you, once the game's on.
+  if (on >= 1) drawPixels(HEART, middle - 7, couchTop - 30 - Math.round(Math.sin(time / 300) * 2), 2, COLORS.heart);
+
+  // The buttons, once the TV's on.
+  if (on >= 1) drawGameCardButtons(area, name);
+}
+
+// What's on the TV: off (dark), then a thin bright line that opens up like an old TV
+// turning on, then the game (its photo, or a pixel "PRESS START" screen).
+function drawTVScreen(screen, part, name, own, on, time) {
+  if (on <= 0) return;
+  const width = screen.right - screen.left, height = screen.bottom - screen.top;
+  const middleX = (screen.left + screen.right) / 2, middleY = (screen.top + screen.bottom) / 2;
+  ctx.save();
+  if (on < 0.3) {
+    // First a bright line that grows across the screen...
+    const lineWidth = width * (on / 0.3);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(middleX - lineWidth / 2, middleY - 1, lineWidth, 2);
     ctx.restore();
-    ctx.strokeStyle = COLORS.text;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(left, card.top + 10, width, height);
-    drawGameSteps(card, steps, card.top + 80);
-    drawGameCardButtons(area, name);
     return;
   }
-  drawSprite(CONTROLLER, CONTROLLER_COLORS, card.left + 16, card.top + 16, 5);   // the Arcade's little controller
-  write("Game time!", card.left + 70, card.top + 18, FONTS.small, COLORS.heart, "left", "top");
-  // The name, as big as fits (from 24 pixels tall down to 12).
-  let nameSize = 24;
-  ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
-  while (nameSize > 12 && ctx.measureText(name).width > card.right - card.left - 90) {
-    nameSize--;
-    ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
-  }
-  write(name, card.left + 70, card.top + 32, ctx.font, COLORS.text, "left", "top");
+  // ...then it opens up from the middle to show the game.
+  const open = (on - 0.3) / 0.7;
+  const shown = Math.max(2, height * open);
+  ctx.beginPath();
+  ctx.rect(screen.left, middleY - shown / 2, width, shown);
+  ctx.clip();
 
-  drawGameSteps(card, steps, card.top + 76);
-  drawGameCardButtons(area, name);
+  // The game's picture (the photo you gave it on the wheel, or the banner you wrote in),
+  // or a cute pixel title screen.
+  const picture = part.picture && !own ? loadedPicture(part.picture) : choicePhoto(name);
+  if (picture) {
+    drawPhotoCover(picture, screen);
+  } else {
+    ctx.fillStyle = GAME_ROOM.screen;
+    ctx.fillRect(screen.left, screen.top, width, height);
+    drawSprite(CONTROLLER, { X: "#FFFFFF", B: GAME_ROOM.pink }, middleX - 18, screen.top + 14, 4);
+    write(name, middleX, screen.top + 54, fontThatFits(name, width - 16), COLORS.white);
+    if (Math.floor(time / 600) % 2 === 0) write("PRESS START", middleX, screen.top + 80, FONTS.tag, GAME_ROOM.pink);
+  }
+  // Old TV lines across the screen, and a white flash that fades as it turns on.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+  for (let y = screen.top; y < screen.bottom; y += 3) ctx.fillRect(screen.left, y, width, 1);
+  if (open < 1) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * (1 - open)})`;
+    ctx.fillRect(screen.left, screen.top, width, height);
+  }
+  ctx.restore();
 }
 
 // Pictures used on the date (like the game's banner), loaded the first time they're needed.
