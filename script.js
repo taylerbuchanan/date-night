@@ -6557,6 +6557,60 @@ function drawFlap(hinge, open, upward) {
   ctx.stroke();
 }
 
+// Does this invite get the little mystery wheel? Yes if your date night plan (with a
+// wheel in it) goes with it. On your side, the Preview in "Plan a date" shows it too.
+function inviteHasWheel(invite) {
+  const plan = state.datePlan;
+  if (!invite || !plan || !(plan.games.length || plan.movies.length)) return false;
+  if (invite.preview) return IS_TAYLER;
+  const planInvite = inviteForPlan();
+  return Boolean(invite.remote && planInvite && invite.remote.id === planInvite.id);
+}
+
+// A little wheel with question marks on it, slowly turning (so he knows something's
+// coming, but not what!). x, y is the middle.
+function drawMysteryWheel(x, y, radius) {
+  const slices = 6;
+  const slice = Math.PI * 2 / slices;
+  const turn = performance.now() / 2500;      // slow turning
+  ctx.save();
+  for (let number = 0; number < slices; number++) {
+    const start = turn + number * slice;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, radius, start, start + slice);
+    ctx.closePath();
+    ctx.fillStyle = WHEEL_COLORS[number % WHEEL_COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // A "?" in the middle of each slice (standing up straight, so it's easy to read).
+    const middle = start + slice / 2;
+    write("?", x + Math.cos(middle) * radius * 0.62, y + Math.sin(middle) * radius * 0.62, FONTS.small, COLORS.text);
+  }
+  // The rim, the middle, and the pointer on top.
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.heart;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - radius - 10);
+  ctx.lineTo(x + 7, y - radius - 10);
+  ctx.lineTo(x, y - radius + 4);
+  ctx.closePath();
+  ctx.fillStyle = COLORS.heart;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 // The writing on the letter, plus the buttons.
 function drawLetter() {
   ctx.globalAlpha = state.letter.alpha;
@@ -6575,9 +6629,14 @@ function drawLetter() {
   ctx.stroke();
   ctx.setLineDash([]);
 
+  // A date night with spin wheels: a little mystery wheel on the right side of the letter.
+  const wheel = inviteHasWheel(invite);
+  if (wheel) drawMysteryWheel(LETTER.right - 66, 222, 32);
+
   // The details. If one wraps onto more lines, the extra lines are indented a little.
+  // (Not as wide when the wheel is there, so the words don't run into it.)
   const textLeft = LETTER.left + 30;
-  const textRight = LETTER.right - 30;
+  const textRight = wheel ? LETTER.right - 110 : LETTER.right - 30;
   const indent = 18;
   const lineHeight = 21;
   let y = 171;
