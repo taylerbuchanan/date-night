@@ -7648,14 +7648,19 @@ function choicePhoto(name) {
   return src ? loadedPicture(src) : null;
 }
 
-// Turns your plan into the parts of the date: the activities in order, then the game
-// wheel, then the movie/show wheel. (An empty wheel is skipped.)
+// Turns your plan into the parts of the date, in this order:
+//   activities "at the start" -> game wheel -> activities "between the wheels" ->
+//   movie/show wheel -> activities "at the end"
+// (Each activity's "goes" says where it fits. An empty wheel is skipped.)
 function planParts(plan) {
-  const parts = plan.activities.filter(activity => activity.name).map(activity => ({
-    kind: "activity", name: activity.name, steps: activity.steps || [], link: activity.link || "",
-  }));
+  const activities = goes => plan.activities
+    .filter(activity => activity.name && (activity.goes || "start") === goes)
+    .map(activity => ({ kind: "activity", name: activity.name, steps: activity.steps || [], link: activity.link || "" }));
+  const parts = activities("start");
   if (plan.games.length) parts.push({ kind: "game", name: "Game wheel", wheel: plan.games });
+  parts.push(...activities("middle"));
   if (plan.movies.length) parts.push({ kind: "movie", name: "Movie wheel", wheel: plan.movies });
+  parts.push(...activities("end"));
   return parts;
 }
 
@@ -8502,7 +8507,15 @@ function addActivityRow(activity = { name: "", steps: [], link: "" }) {
       <button type="button" class="cancel remove" title="Remove">✕</button>
     </div>
     <textarea class="steps" rows="2" maxlength="400" placeholder="What to do (one step per line, optional)"></textarea>
-    <input class="link" maxlength="300" placeholder="Link (optional)" autocomplete="off">`;
+    <input class="link" maxlength="300" placeholder="Link (optional)" autocomplete="off">
+    <label class="goes">Goes
+      <select>
+        <option value="start">at the start (before the game wheel)</option>
+        <option value="middle">between the wheels (after the game, before the movie)</option>
+        <option value="end">at the end (after the movie wheel)</option>
+      </select>
+    </label>`;
+  row.querySelector("select").value = activity.goes || "start";
   row.querySelector(".name").value = activity.name || "";
   row.querySelector(".steps").value = (activity.steps || []).join("\n");
   row.querySelector(".link").value = activity.link || "";
@@ -8764,6 +8777,7 @@ datePlanForm.addEventListener("submit", async event => {
     name: row.querySelector(".name").value.trim(),
     steps: lines(row.querySelector(".steps").value),
     link: row.querySelector(".link").value.trim(),
+    goes: row.querySelector("select").value,
   })).filter(activity => activity.name);
   const photos = {};
   const games = readChoices(gameList, photos);
