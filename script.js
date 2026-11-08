@@ -7810,7 +7810,7 @@ function drawStartDateButton(time) {
 
 // The buttons.
 function startDateNight() {
-  playSound("chime", 0.3);     // (kept soft, it's a loud one)
+  playSound("click");     // (just a soft click: the chime here was too loud)
   saveDateNight({ step: 1 });
   if (!state.previewingHisSide && !state.datePreview) pingOther(`💗 ${ME} started our date! Open the little computer.`);
 }
