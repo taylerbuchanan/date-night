@@ -7862,15 +7862,6 @@ function previousDatePart() {
   const first = state.datePreview && state.datePreview.lookBack ? 1 : 0;
   saveDateNight({ step: Math.max(first, state.dateNight.step - 1) });
 }
-function openSteamPage(name) {
-  playSound("click");
-  const part = DATE_NIGHT.parts[state.dateNight.step - 1];
-  // His own pick? Search Steam for it. Otherwise the link you wrote.
-  const link = state.dateNight.picks[state.dateNight.step]
-    ? `https://store.steampowered.com/search/?term=${encodeURIComponent(name)}`
-    : part.link;
-  if (link) window.open(link, "_blank");
-}
 
 // Draws the whole "Our date" window.
 function drawDateNight(area, time) {
@@ -8053,7 +8044,7 @@ function drawGameRoom(area, time, part, step) {
   if (on >= 1) drawPixels(HEART, middle - 7, couchTop - 30 - Math.round(Math.sin(time / 300) * 2), 2, COLORS.heart);
 
   // The buttons, once the TV's on.
-  if (on >= 1) drawGameCardButtons(area, name);
+  if (on >= 1) drawGameCardButtons(area);
 }
 
 // What's on the TV: off (dark), then a thin bright line that opens up like an old TV
@@ -8124,16 +8115,15 @@ function drawGameSteps(card, steps, top) {
   });
 }
 
-// The buttons along the bottom of the game card.
-function drawGameCardButtons(area, name) {
+// The buttons along the bottom of the game room. (No Steam button: you're gifting him the game!)
+function drawGameCardButtons(area) {
   const middle = (area.left + area.right) / 2;
   const buttonY = area.bottom - 24;
   const part = DATE_NIGHT.parts[state.dateNight.step - 1];
-  drawButton(middle - 160, buttonY, 120, 28, "Steam", COLORS.cream, COLORS.text, () => openSteamPage(name));
   // (A game from the wheel gets "Spin again" instead of "Something else".)
-  if (part.wheel) drawButton(middle, buttonY, 170, 28, "Spin again", COLORS.cream, COLORS.text, spinWheel);
-  else drawButton(middle, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
-  drawButton(middle + 160, buttonY, 130, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  if (part.wheel) drawButton(middle - 95, buttonY, 170, 28, "Spin again", COLORS.cream, COLORS.text, spinWheel);
+  else drawButton(middle - 95, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+  drawButton(middle + 95, buttonY, 170, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
 }
 
 // "Next part", or "The end 💗" on the last part.
