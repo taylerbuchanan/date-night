@@ -7967,7 +7967,8 @@ function drawGameCard(area, part, step) {
   steppedBox(card.left, card.top, card.right, card.bottom, 4, COLORS.white, COLORS.text, 2);
 
   // The game's banner picture across the top (if there is one, and he didn't pick something else).
-  const banner = part.picture && !own ? loadedPicture(part.picture) : null;
+  // (A game from the wheel uses the photo you gave it.)
+  const banner = part.picture && !own ? loadedPicture(part.picture) : (part.wheel ? choicePhoto(name) : null);
   if (banner) {
     const height = 58, width = height * banner.naturalWidth / banner.naturalHeight;
     const left = (card.left + card.right) / 2 - width / 2;
@@ -8164,8 +8165,11 @@ function drawCurtain(left, top, width, height) {
 // else), or a cute pixel poster with the name on it.
 function drawPoster(box, name, step) {
   const width = box.right - box.left, height = box.bottom - box.top;
+  const photo = choicePhoto(name);      // (a photo you gave it on the wheel)
   if (hasPoster && DATE_NIGHT.parts[step - 1].poster && !state.dateNight.picks[step]) {
     ctx.drawImage(posterImage, box.left, box.top, width, height);
+  } else if (photo) {
+    drawPhotoCover(photo, box);
   } else {
     ctx.fillStyle = COLORS.titleBar;
     ctx.fillRect(box.left, box.top, width, height);
@@ -8248,6 +8252,35 @@ function startWheelSpin(part, step, winner) {
   wheelSpin = { step, from, to, startedAt: performance.now(), lastSlice: null, landed: false };
 }
 
+// A photo as a little square (cropped to fit, not squished), with a dark border.
+// x, y is the middle.
+function drawPhotoSquare(photo, x, y, size) {
+  const side = Math.min(photo.naturalWidth, photo.naturalHeight);
+  const left = Math.round(x - size / 2), top = Math.round(y - size / 2);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(photo, (photo.naturalWidth - side) / 2, (photo.naturalHeight - side) / 2, side, side,
+                left, top, size, size);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(left, top, size, size);
+  ctx.restore();
+}
+
+// Draws a photo to fill a box (cropped to fit, not squished).
+function drawPhotoCover(photo, box) {
+  const width = box.right - box.left, height = box.bottom - box.top;
+  const scale = Math.max(width / photo.naturalWidth, height / photo.naturalHeight);
+  const cropWidth = width / scale, cropHeight = height / scale;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(photo, (photo.naturalWidth - cropWidth) / 2, (photo.naturalHeight - cropHeight) / 2, cropWidth, cropHeight,
+                box.left, box.top, width, height);
+  ctx.restore();
+}
+
 // Draws the wheel part: the wheel, the pointer, and the Spin button.
 function drawWheel(area, time, part, step) {
   const middle = (area.left + area.right) / 2;
@@ -8302,6 +8335,16 @@ function drawWheel(area, time, part, step) {
     ctx.strokeStyle = COLORS.text;
     ctx.lineWidth = 1.5;
     ctx.stroke();
+    // A choice with a photo: the photo in its slice (standing up straight), instead of words.
+    // (The names are all in the list on the right.)
+    const photo = choicePhoto(options[number]);
+    if (photo) {
+      const middleAngle = start + slice / 2;
+      const distance = radius * 0.62;
+      const size = Math.min(48, radius * 0.6, 2 * distance * Math.sin(Math.min(slice, Math.PI) / 2) * 0.9);
+      drawPhotoSquare(photo, centerX + Math.cos(middleAngle) * distance, centerY + Math.sin(middleAngle) * distance, size);
+      continue;
+    }
     // The words, along the middle of the slice, ending near the edge.
     ctx.save();
     ctx.translate(centerX, centerY);
@@ -8376,9 +8419,15 @@ function drawWheel(area, time, part, step) {
     const room = (twoColumns ? width / 2 : width) - 18;
     while (words.length > 1 && ctx.measureText(words).width > room) words = words.slice(0, -1);
     if (words !== option) words = `${words.trim()}…`;
-    ctx.fillStyle = color;
-    ctx.fillRect(x + 2, y - 2, 4, 4);       // a little bullet
-    write(words, x + 12, y, FONTS.note, color, "left");
+    // Its little photo (or a little bullet, if it doesn't have one).
+    const photo = choicePhoto(option);
+    if (photo) {
+      drawPhotoSquare(photo, x + 4, y, Math.min(14, rowHeight - 2));
+    } else {
+      ctx.fillStyle = color;
+      ctx.fillRect(x + 2, y - 2, 4, 4);
+    }
+    write(words, x + 14, y, FONTS.note, color, "left");
   });
 
   const bottomY = area.bottom - 30;
@@ -8402,10 +8451,14 @@ const datePlanPanel = makePanel("dateplan", `
     <p class="section">Activities (in order)</p>
     <div class="activities"></div>
     <button type="button" class="cancel add">+ Add activity</button>
-    <p class="section">Game wheel (one game per line)</p>
-    <textarea name="games" rows="5" maxlength="1500" placeholder="Unsolved Case&#10;Stardew Valley&#10;..."></textarea>
-    <p class="section">Movie / show wheel (one per line)</p>
-    <textarea name="movies" rows="5" maxlength="1500" placeholder="Corpse Bride&#10;Coraline&#10;..."></textarea>
+    <p class="section">Game wheel</p>
+    <p class="tip">Click the photo box to pick a picture, or copy a picture and paste it (Ctrl+V) into the name box.</p>
+    <div class="choices-list games"></div>
+    <button type="button" class="cancel add-game">+ Add game</button>
+    <p class="section">Movie / show wheel</p>
+    <div class="choices-list movies"></div>
+    <button type="button" class="cancel add-movie">+ Add movie or show</button>
+    <input type="file" class="photo-file" accept="image/*" hidden>
     <p class="problem"></p>
     <div class="two">
       <button type="button" class="cancel close">Cancel</button>
@@ -8441,6 +8494,114 @@ datePlanPanel.querySelector(".add").addEventListener("click", () => {
   playSound("click");
   addActivityRow().querySelector(".name").focus();
 });
+
+// ----- The wheel choices, each with a little photo -----
+const gameList = datePlanPanel.querySelector(".choices-list.games");
+const movieList = datePlanPanel.querySelector(".choices-list.movies");
+const photoFile = datePlanPanel.querySelector(".photo-file");
+let photoRow = null;     // which choice is getting a photo from the file picker
+
+// Shrinks a picture to at most 200 pixels across (so it saves quickly), as text that
+// can be saved in Firebase (a "data URL").
+function shrinkPhoto(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const picture = new Image();
+      picture.onerror = reject;
+      picture.onload = () => {
+        const scale = Math.min(1, 200 / Math.max(picture.naturalWidth, picture.naturalHeight));
+        const small = document.createElement("canvas");
+        small.width = Math.max(1, Math.round(picture.naturalWidth * scale));
+        small.height = Math.max(1, Math.round(picture.naturalHeight * scale));
+        const pen = small.getContext("2d");
+        pen.fillStyle = "#FFFFFF";              // (see-through parts become white)
+        pen.fillRect(0, 0, small.width, small.height);
+        pen.drawImage(picture, 0, 0, small.width, small.height);
+        resolve(small.toDataURL("image/jpeg", 0.8));
+      };
+      picture.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Puts a photo on a choice (or shows the empty photo box if there isn't one).
+function setRowPhoto(row, photo) {
+  row.dataset.photo = photo || "";
+  const box = row.querySelector(".photo");
+  box.innerHTML = photo ? `<img src="${photo}" alt="">` : "+ photo";
+}
+
+// Adds one wheel choice: a photo box, its name, and a remove button.
+function addChoiceRow(list, name = "", photo = "") {
+  const row = document.createElement("div");
+  row.className = "choice";
+  row.innerHTML = `
+    <button type="button" class="cancel photo" title="Pick a photo"></button>
+    <input class="name" maxlength="40" placeholder="Name" autocomplete="off">
+    <button type="button" class="cancel remove" title="Remove">✕</button>`;
+  row.querySelector(".name").value = name;
+  setRowPhoto(row, photo);
+  row.querySelector(".photo").addEventListener("click", () => {
+    playSound("click");
+    photoRow = row;
+    photoFile.value = "";
+    photoFile.click();
+  });
+  row.querySelector(".remove").addEventListener("click", () => {
+    playSound("click");
+    row.remove();
+  });
+  // Pasting a copied picture (Ctrl+V) into this choice gives it that photo.
+  row.addEventListener("paste", async event => {
+    const item = [...(event.clipboardData ? event.clipboardData.items : [])].find(thing => thing.type.startsWith("image/"));
+    if (!item) return;     // (just words: paste them like normal)
+    event.preventDefault();
+    try {
+      setRowPhoto(row, await shrinkPhoto(item.getAsFile()));
+      playSound("coin", 0.4);
+    } catch (problem) {
+      console.log("Couldn't use that picture:", problem);
+    }
+  });
+  list.appendChild(row);
+  return row;
+}
+
+// A picture picked with the file picker goes on the choice that asked for it.
+photoFile.addEventListener("change", async () => {
+  const file = photoFile.files[0];
+  if (!file || !photoRow) return;
+  try {
+    setRowPhoto(photoRow, await shrinkPhoto(file));
+    playSound("coin", 0.4);
+  } catch (problem) {
+    console.log("Couldn't use that picture:", problem);
+  }
+});
+
+datePlanPanel.querySelector(".add-game").addEventListener("click", () => {
+  playSound("click");
+  addChoiceRow(gameList).querySelector(".name").focus();
+});
+datePlanPanel.querySelector(".add-movie").addEventListener("click", () => {
+  playSound("click");
+  addChoiceRow(movieList).querySelector(".name").focus();
+});
+
+// Everything on one wheel list: the names, plus their photos added to "photos".
+function readChoices(list, photos) {
+  const names = [];
+  list.querySelectorAll(".choice").forEach(row => {
+    const name = row.querySelector(".name").value.trim();
+    if (!name || names.includes(name)) return;
+    names.push(name);
+    if (row.dataset.photo) photos[name] = row.dataset.photo;
+  });
+  return names;
+}
 datePlanPanel.querySelector(".close").addEventListener("click", () => {
   playSound("click");
   state.datePlanning = false;
@@ -8449,12 +8610,18 @@ datePlanPanel.querySelector(".close").addEventListener("click", () => {
 // Opens the box, filled in with your saved plan.
 function openPlanEditor() {
   playSound("click");
-  const plan = state.datePlan || { activities: [], games: [], movies: [] };
+  const plan = state.datePlan || { activities: [], games: [], movies: [], photos: {} };
+  const photos = plan.photos || {};
   activityList.innerHTML = "";
   plan.activities.forEach(activity => addActivityRow(activity));
   if (!plan.activities.length) addActivityRow();
-  datePlanForm.elements.games.value = plan.games.join("\n");
-  datePlanForm.elements.movies.value = plan.movies.join("\n");
+  // The wheels (with a couple of empty ones to start, if there's nothing yet).
+  gameList.innerHTML = "";
+  movieList.innerHTML = "";
+  plan.games.forEach(name => addChoiceRow(gameList, name, photos[name]));
+  plan.movies.forEach(name => addChoiceRow(movieList, name, photos[name]));
+  if (!plan.games.length) { addChoiceRow(gameList); addChoiceRow(gameList); }
+  if (!plan.movies.length) { addChoiceRow(movieList); addChoiceRow(movieList); }
   // Which invite it goes with.
   const invite = inviteForPlan();
   datePlanPanel.querySelector(".hint").textContent = invite
@@ -8473,8 +8640,9 @@ datePlanForm.addEventListener("submit", async event => {
     steps: lines(row.querySelector(".steps").value),
     link: row.querySelector(".link").value.trim(),
   })).filter(activity => activity.name);
-  const games = lines(datePlanForm.elements.games.value);
-  const movies = lines(datePlanForm.elements.movies.value);
+  const photos = {};
+  const games = readChoices(gameList, photos);
+  const movies = readChoices(movieList, photos);
   if (!activities.length && !games.length && !movies.length) {
     problem.textContent = "Add an activity or something on a wheel first!";
     return;
@@ -8488,7 +8656,8 @@ datePlanForm.addEventListener("submit", async event => {
     // (Saved as plain text inside "picks", because that's what the rules allow here.)
     await database.collection("datenight").doc("plan").set({
       step: 0,
-      picks: { activities: JSON.stringify(activities), games: games.join("\n"), movies: movies.join("\n") },
+      picks: { activities: JSON.stringify(activities), games: games.join("\n"), movies: movies.join("\n"),
+               photos: JSON.stringify(photos) },
       by: ME,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
