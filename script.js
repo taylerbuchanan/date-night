@@ -7810,7 +7810,7 @@ function drawStartDateButton(time) {
 
 // The buttons.
 function startDateNight() {
-  playSound("chime");
+  playSound("chime", 0.3);     // (kept soft, it's a loud one)
   saveDateNight({ step: 1 });
   if (!state.previewingHisSide && !state.datePreview) pingOther(`💗 ${ME} started our date! Open the little computer.`);
 }
@@ -8080,7 +8080,9 @@ function drawCinema(area, time, step) {
   if (curtainForStep !== step) {
     curtainForStep = step;
     curtainStart = now + 800;      // a little pause first, for drama
-    setTimeout(() => playSound("chime"), 800);
+    // A soft chime as they open. (Not after a spin wheel, since the wheel already made
+    // its own sound when it landed, and hearing the chime after every spin got annoying.)
+    if (!DATE_NIGHT.parts[step - 1].wheel) setTimeout(() => playSound("chime", 0.25), 800);
   }
   const opened = keepBetween((now - curtainStart) / (CURTAIN_SECONDS * 1000), 0, 1);
   const eased = 1 - Math.pow(1 - opened, 3);    // starts fast, slows down at the end
@@ -8238,6 +8240,28 @@ function noticeSpin() {
   if (seenBefore && picks[step]) startWheelSpin(part, step, picks[step]);
 }
 
+// The wheel's tick: a soft little wooden "tok", like a prize wheel's peg hitting the
+// pointer. (It's made right here with the browser's sound maker, so no sound file.)
+// WHEEL_TICK_VOLUME makes it louder or quieter (it's kept soft).
+const WHEEL_TICK_VOLUME = 0.35;
+function playWheelTick() {
+  if (!audio || audio.state !== "running") return;
+  const now = audio.currentTime;
+  const loudness = audio.createGain();
+  loudness.connect(audio.destination);
+  // Fades out super fast (about 1/20 of a second), so it's a tap, not a beep.
+  loudness.gain.setValueAtTime(WHEEL_TICK_VOLUME * MASTER_VOLUME, now);
+  loudness.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+  // A short "tok" note that drops in pitch (a little different each time, so it sounds real).
+  const tone = audio.createOscillator();
+  tone.type = "triangle";
+  tone.frequency.setValueAtTime(1100 + Math.random() * 120, now);
+  tone.frequency.exponentialRampToValueAtTime(500, now + 0.04);
+  tone.connect(loudness);
+  tone.start(now);
+  tone.stop(now + 0.06);
+}
+
 // Starts the spin so it lands on this one (5 or so full turns, then slows down).
 function startWheelSpin(part, step, winner) {
   const number = part.wheel.indexOf(winner);
@@ -8304,7 +8328,7 @@ function drawWheel(area, time, part, step) {
     wheelAngle = wheelSpin.from + (wheelSpin.to - wheelSpin.from) * eased;
     // A soft tick each time a new slice passes the pointer.
     const under = Math.floor((((-Math.PI / 2 - wheelAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / slice);
-    if (wheelSpin.lastSlice !== null && under !== wheelSpin.lastSlice && done < 1) playKeySound(0.12);
+    if (wheelSpin.lastSlice !== null && under !== wheelSpin.lastSlice && done < 1) playWheelTick();
     wheelSpin.lastSlice = under;
     if (done >= 1) {
       landedOn = state.dateNight.picks[step];
@@ -8452,7 +8476,7 @@ const datePlanPanel = makePanel("dateplan", `
     <div class="activities"></div>
     <button type="button" class="cancel add">+ Add activity</button>
     <p class="section">Game wheel</p>
-    <p class="tip">Copy a picture, click the name it's for, and press Ctrl+V. Or click the photo box to pick a saved picture.</p>
+    <p class="tip">To add a photo: copy a picture (right-click it, Copy image), click the "+ photo" box, and press Ctrl+V.</p>
     <div class="choices-list games"></div>
     <button type="button" class="cancel add-game">+ Add game</button>
     <p class="section">Movie / show wheel</p>
@@ -8544,14 +8568,15 @@ function addChoiceRow(list, name = "", photo = "") {
     <button type="button" class="cancel remove" title="Remove">✕</button>`;
   row.querySelector(".name").value = name;
   setRowPhoto(row, photo);
+  // Clicking the photo box gets it ready for a pasted picture (Ctrl+V), with a little
+  // button under it to pick a saved picture instead.
   row.querySelector(".photo").addEventListener("click", () => {
     playSound("click");
-    photoRow = row;
-    photoFile.value = "";
-    photoFile.click();
+    choosePhotoRow(row);
   });
   row.querySelector(".remove").addEventListener("click", () => {
     playSound("click");
+    if (row.classList.contains("picking")) doneChoosingPhoto();
     row.remove();
   });
   // Clicking anywhere on a choice makes it the one a pasted picture goes to.
@@ -8567,6 +8592,31 @@ function addChoiceRow(list, name = "", photo = "") {
 //   - a picture file (copied in File Explorer)
 //   - just a LINK to the picture (some websites copy it that way)
 let pasteRow = null;
+
+// The little "Paste it now!" note that shows up under the photo box you clicked.
+const pasteNote = document.createElement("div");
+pasteNote.className = "paste-note";
+pasteNote.innerHTML = `Now press <b>Ctrl+V</b> to paste the picture here!
+  <button type="button" class="cancel pick-file">or pick a saved one</button>`;
+pasteNote.querySelector(".pick-file").addEventListener("click", () => {
+  playSound("click");
+  photoRow = pasteNote.previousElementSibling;
+  photoFile.value = "";
+  photoFile.click();
+});
+
+// Gets a choice ready for its photo: a pink outline, and the note under it.
+function choosePhotoRow(row) {
+  datePlanPanel.querySelectorAll(".choice.picking").forEach(other => other.classList.remove("picking"));
+  row.classList.add("picking");
+  row.after(pasteNote);
+  pasteRow = row;
+  row.querySelector(".photo").focus();
+}
+function doneChoosingPhoto() {
+  datePlanPanel.querySelectorAll(".choice.picking").forEach(other => other.classList.remove("picking"));
+  pasteNote.remove();
+}
 
 // A picture from a link: shrinks it if the website allows that, or else keeps the link.
 function photoFromLink(link) {
@@ -8635,6 +8685,7 @@ async function pastePlanPhoto(event) {
     const photo = file ? await shrinkPhoto(file) : await photoFromLink(link);
     if (!photo) throw new Error("not a picture");
     setRowPhoto(row, photo);
+    doneChoosingPhoto();
     problem.textContent = "";
     playSound("coin", 0.4);
   } catch (trouble) {
@@ -8649,6 +8700,7 @@ photoFile.addEventListener("change", async () => {
   if (!file || !photoRow) return;
   try {
     setRowPhoto(photoRow, await shrinkPhoto(file));
+    doneChoosingPhoto();
     playSound("coin", 0.4);
   } catch (problem) {
     console.log("Couldn't use that picture:", problem);
