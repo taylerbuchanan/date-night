@@ -3011,6 +3011,29 @@ async function saveInviteWindow(dateId, minutes) {
 }
 planForm.addEventListener("input", updatePlanHint);
 
+// The form remembers what you've typed (in this browser), so refreshing or an update
+// doesn't wipe it. It's cleared once the invite is sent.
+const PLAN_DRAFT_KEY = `${SIDE}:planDraft`;
+function savePlanDraft() {
+  const draft = {};
+  [...planForm.elements].forEach(box => { if (box.name) draft[box.name] = box.value; });
+  try { localStorage.setItem(PLAN_DRAFT_KEY, JSON.stringify(draft)); } catch (problem) {}
+}
+function loadPlanDraft() {
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(PLAN_DRAFT_KEY) || "null"); } catch (problem) {}
+  if (!draft) return;
+  Object.entries(draft).forEach(([name, value]) => {
+    if (planForm.elements[name]) planForm.elements[name].value = value;
+  });
+  updatePlanHint();
+}
+function clearPlanDraft() {
+  try { localStorage.removeItem(PLAN_DRAFT_KEY); } catch (problem) {}
+}
+planForm.addEventListener("input", savePlanDraft);
+loadPlanDraft();
+
 // Everything filled into the form (with the usual words for anything left empty).
 function planFormValues() {
   const field = name => planForm.elements[name].value.trim();
@@ -3061,6 +3084,7 @@ planForm.addEventListener("submit", async event => {
   problem.textContent = "Sending...";
   try {
     await sendDate(form);
+    clearPlanDraft();     // (sent, so the saved words aren't needed anymore)
     problem.textContent = "";
     playSound("win", 0.5);
     planPanel.querySelector(".sent").hidden = false;
