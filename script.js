@@ -2913,8 +2913,10 @@ imPanel.querySelector("input").addEventListener("keydown", () => playKeySound(0.
 // The "Plan a date" form. Everything starts filled in with the usual words, so he only
 // has to change what he wants.
 const escapeHTML = text => text.replace(/[&<>"]/g, letter => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[letter]);
+// ("novalidate" = the browser doesn't block sending over a half-filled box, like an "Until"
+// with just "PM" in it. The code checks the day and time itself, below.)
 const planPanel = makePanel("plan", `
-  <form class="plan">
+  <form class="plan" novalidate>
     <div class="sent" hidden>
       <p class="big">Sent! 💌</p>
       <p>It's on ${OTHER}'s desktop now.</p>
