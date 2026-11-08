@@ -2304,6 +2304,7 @@ function startListening() {
   database.collection("dates").orderBy("sentAt").onSnapshot(snapshot => {
     state.remoteDates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     checkForNewDates();
+    refreshDateNight();    // (your date night plan goes with the newest invite you sent)
   }, failed);
 
   listenForGames(failed);
@@ -7251,7 +7252,10 @@ function closeWindow() {
     return;
   }
   // Closing "Our date" ends a preview of it.
-  if (state.window === "datenight") endDatePreview();
+  if (state.window === "datenight") {
+    endDatePreview();
+    state.datePlanning = false;    // (closes the "Edit plan" box too)
+  }
   // Take this window out of the list. (A love note he just read moves into Memories.)
   state.windows = state.windows.filter(win => win !== loadedWindow);
   loadedWindow = null;
@@ -7541,10 +7545,77 @@ setInterval(checkForUpdate, UPDATE_CHECK_MINUTES * 60000);
 //   the last step    - "Thank you for the date"
 // The step is saved in Firebase, so when one of you clicks Next, BOTH computers move on.
 
-const DATE_NIGHT = INVITES.filter(invite => invite.parts).pop() || null;
+// The date night written into this file (the Oct 26 one).
+const WRITTEN_DATE_NIGHT = INVITES.filter(invite => invite.parts).pop() || null;
 
-// When it starts, as a real moment in time (startsAt is in YOUR time, Arizona).
-const DATE_NIGHT_START = DATE_NIGHT ? zonedTimeToDate(DATE_NIGHT.date, DATE_NIGHT.startsAt, YOUR_TIME_ZONE).getTime() : 0;
+// The date night happening now. Usually it's YOUR PLAN (made with "Edit plan" in the
+// "Our date" window, on your side) that goes with the newest invite you sent with
+// "Plan a date". If there's no plan, it's the one written into this file.
+// (It can change while the page is open, so it's "let", and refreshDateNight() sets it.)
+let DATE_NIGHT = WRITTEN_DATE_NIGHT;
+
+// When it starts, as a real moment in time (0 = no time picked yet).
+let DATE_NIGHT_START = 0;
+function dateNightStart(dateNight) {
+  if (!dateNight) return 0;
+  if (dateNight.startsAtTime) return dateNight.startsAtTime;          // from an invite you sent
+  if (dateNight.startsAt) return zonedTimeToDate(dateNight.date, dateNight.startsAt, YOUR_TIME_ZONE).getTime();
+  return 0;
+}
+DATE_NIGHT_START = dateNightStart(DATE_NIGHT);
+
+// YOUR PLAN, from Firebase (null until it loads, or if you haven't made one):
+//   { activities: [{ name, steps: [...], link }], games: [...], movies: [...] }
+// It's saved in the "datenight" collection as the doc "plan". (The rules there only allow
+// step, picks, by, and updatedAt, so the plan is tucked inside "picks" as plain text.)
+state.datePlan = null;
+state.datePlanning = false;     // is the "Edit plan" box open?
+
+// Reads the plan out of its Firebase doc.
+function readDatePlan(data) {
+  const picks = data.picks || {};
+  const lines = text => String(text || "").split("\n").map(line => line.trim()).filter(Boolean);
+  let activities = [];
+  try { activities = JSON.parse(picks.activities || "[]"); } catch (problem) {}
+  return { activities, games: lines(picks.games), movies: lines(picks.movies) };
+}
+
+// Turns your plan into the parts of the date: the activities in order, then the game
+// wheel, then the movie/show wheel. (An empty wheel is skipped.)
+function planParts(plan) {
+  const parts = plan.activities.filter(activity => activity.name).map(activity => ({
+    kind: "activity", name: activity.name, steps: activity.steps || [], link: activity.link || "",
+  }));
+  if (plan.games.length) parts.push({ kind: "game", name: "Game wheel", wheel: plan.games });
+  if (plan.movies.length) parts.push({ kind: "movie", name: "Movie wheel", wheel: plan.movies });
+  return parts;
+}
+
+// The newest invite YOU sent with "Plan a date". Your plan goes with that one.
+function inviteForPlan() {
+  const mine = state.remoteDates.filter(date => date.from === YOUR_NAME && date.when);
+  return mine.length ? mine[mine.length - 1] : null;     // (they're oldest first)
+}
+
+// Works out which date night is happening, whenever your plan or the invites change.
+function refreshDateNight() {
+  const plan = state.datePlan;
+  const parts = plan ? planParts(plan) : [];
+  const invite = inviteForPlan();
+  let next = WRITTEN_DATE_NIGHT;
+  if (parts.length && invite) {
+    // Your plan, at your invite's time. (Same id as the invite, so it shows in Memories too.)
+    const when = invite.when.toDate();
+    next = { id: `remote:${invite.id}`, date: dayIn(when, MY_TIME_ZONE), startsAtTime: when.getTime(), parts };
+  } else if (parts.length && IS_TAYLER) {
+    // Your side, before you've sent the invite: no time yet, but you can still Preview it.
+    // (His side keeps the old one until the invite is sent.)
+    next = { id: "plan", date: null, parts, unscheduled: true };
+  }
+  DATE_NIGHT = next;
+  DATE_NIGHT_START = dateNightStart(DATE_NIGHT);
+  followDateNight();
+}
 
 // How long after the start the "DATE TIME" pop-up can still show up (6 hours).
 const DATE_NIGHT_POPUP_HOURS = 6;
@@ -7568,7 +7639,7 @@ let curtainForStep = null;    // which step those curtains were for
 // The movie poster picture (if the file is there).
 const posterImage = new Image();
 let hasPoster = false;
-const moviePart = DATE_NIGHT && DATE_NIGHT.parts.find(part => part.kind === "movie");
+const moviePart = WRITTEN_DATE_NIGHT && WRITTEN_DATE_NIGHT.parts.find(part => part.kind === "movie");
 if (moviePart && moviePart.poster) {
   posterImage.onload = () => { hasPoster = true; };
   posterImage.src = moviePart.poster;
@@ -7583,7 +7654,7 @@ function partName(number) {
 // changes this computer, so nothing gets sent as him.)
 function saveDateNight(changes) {
   Object.assign(state.dateNight, changes);
-  if (!database || state.online !== "ok" || state.previewingHisSide || state.datePreview) return;
+  if (!database || state.online !== "ok" || state.previewingHisSide || state.datePreview || DATE_NIGHT.unscheduled) return;
   database.collection("datenight").doc(DATE_NIGHT.id).set({
     step: state.dateNight.step,
     picks: state.dateNight.picks,
@@ -7594,9 +7665,31 @@ function saveDateNight(changes) {
 
 // Listens for the other person moving the date along.
 // (If this part of Firebase isn't set up yet, the date still works, just on each computer separately.)
+let listeningForPlan = false;
+let dateNightListenerId = null;      // which date's progress we're listening to
+let stopDateNightListener = null;    // stops listening to it (when the date changes)
 function listenForDateNight() {
-  if (!DATE_NIGHT) return;
-  database.collection("datenight").doc(DATE_NIGHT.id).onSnapshot(doc => {
+  // Your plan (both sides need it: you to edit it, him to have it at date time).
+  if (!listeningForPlan) {
+    listeningForPlan = true;
+    database.collection("datenight").doc("plan").onSnapshot(doc => {
+      state.datePlan = doc.exists ? readDatePlan(doc.data()) : null;
+      refreshDateNight();
+    }, () => { listeningForPlan = false; });
+  }
+  refreshDateNight();
+}
+
+// Listens to the progress (step and picks) of whichever date night is happening.
+function followDateNight() {
+  if (!listeningForPlan || !DATE_NIGHT || dateNightListenerId === DATE_NIGHT.id) return;
+  if (stopDateNightListener) stopDateNightListener();
+  stopDateNightListener = null;
+  endDatePreview();
+  dateNightListenerId = DATE_NIGHT.id;
+  state.dateNight = { step: 0, picks: {} };
+  if (DATE_NIGHT.unscheduled) return;     // (no invite yet, so nothing to listen to)
+  stopDateNightListener =database.collection("datenight").doc(DATE_NIGHT.id).onSnapshot(doc => {
     if (!doc.exists) return;
     const data = doc.data();
     // While you're previewing, keep the real progress to the side until you're done.
@@ -7678,6 +7771,9 @@ function endDatePreview() {
   state.datePreview = null;
   state.datePicking = false;
   curtainForStep = null;
+  wheelSpin = null;
+  // (Forget the preview's spins, so the next preview starts fresh.)
+  Object.keys(seenSpins).filter(key => key.includes(":preview")).forEach(key => delete seenSpins[key]);
 }
 function nextDatePart() {
   playSound("click");
@@ -7714,23 +7810,35 @@ function drawDateNight(area, time) {
   } else {
     const step = state.dateNight.step;
     const part = DATE_NIGHT.parts[step - 1];
+    noticeSpin();
     if (step === 0) drawDateWaiting(area, time);
     else if (!part) drawDateEnd(area, time);
+    // A wheel that hasn't been spun yet (or is spinning right now) shows the wheel.
+    else if (part.wheel && (!state.dateNight.picks[step] || (wheelSpin && wheelSpin.step === step))) drawWheel(area, time, part, step);
     else if (part.kind === "movie") drawCinema(area, time, step);
+    else if (part.kind === "activity") drawActivityCard(area, part, step);
     else drawGameCard(area, part, step);
   }
   ctx.restore();
 
   // A Back button in the top right corner, to go back a part (for both of you).
   const lookingBack = state.datePreview && state.datePreview.lookBack;
-  if (DATE_NIGHT && state.dateNight.step >= (lookingBack ? 2 : 1) && !state.datePicking) {
+  if (DATE_NIGHT && state.dateNight.step >= (lookingBack ? 2 : 1) && !state.datePicking && !state.datePlanning && !wheelSpin) {
     drawButton(area.right - 42, area.top + 15, 70, 22, "Back", COLORS.white, COLORS.text, previousDatePart);
   }
 
   // Your side: a Preview button on the start screen, and a reminder while previewing.
   const middle = (area.left + area.right) / 2;
-  if (DATE_NIGHT && IS_TAYLER && !state.datePreview && state.dateNight.step === 0) {
+  if (DATE_NIGHT && IS_TAYLER && !state.datePreview && state.dateNight.step === 0 && !state.datePlanning) {
     drawButton(area.right - 62, area.top + 20, 100, 24, "Preview", COLORS.white, COLORS.text, previewDateNight);
+  }
+  // Your side: "Edit plan" (the activities and the two wheels) in the top left corner.
+  if (IS_TAYLER && !state.previewingHisSide && !state.datePreview && !state.datePlanning) {
+    drawButton(area.left + 52, area.top + 15, 90, 22, "Edit plan", COLORS.white, COLORS.text, openPlanEditor);
+  }
+  // The "Edit plan" box, on top.
+  if (state.datePlanning) {
+    requestPanel("dateplan", { left: area.left + 16, top: area.top + 8, right: area.right - 16, bottom: area.bottom - 8 });
   }
   if (state.datePreview) {
     steppedBox(area.left + 4, area.top + 4, area.left + 168, area.top + 20, 2, COLORS.titleBar, COLORS.text, 1.5);
@@ -7751,7 +7859,13 @@ function drawDateWaiting(area, time) {
   const middle = (area.left + area.right) / 2;
   const left = DATE_NIGHT_START - Date.now();
   drawPixels(HEART, middle - 21, area.top + 30, 6, COLORS.heart);
-  if (left > 0) {
+  if (!DATE_NIGHT_START) {
+    // Your plan, but no invite sent yet (only your side sees this).
+    write("Your plan is saved!", middle, area.top + 105, FONTS.letterTitle, COLORS.text);
+    write("Send the invite with Plan a date,", middle, area.top + 145, FONTS.body, COLORS.text);
+    write("and this plan goes with it 💗", middle, area.top + 168, FONTS.body, COLORS.text);
+    write("(Preview shows you the whole date)", middle, area.top + 200, FONTS.note, COLORS.heart);
+  } else if (left > 0) {
     const hours = Math.floor(left / 3600000), minutes = Math.ceil((left % 3600000) / 60000);
     const countdown = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
     write("Our date starts in", middle, area.top + 95, FONTS.body, COLORS.text);
@@ -7844,9 +7958,48 @@ function drawGameSteps(card, steps, top) {
 function drawGameCardButtons(area, name) {
   const middle = (area.left + area.right) / 2;
   const buttonY = area.bottom - 24;
+  const part = DATE_NIGHT.parts[state.dateNight.step - 1];
   drawButton(middle - 160, buttonY, 120, 28, "Steam", COLORS.cream, COLORS.text, () => openSteamPage(name));
-  drawButton(middle, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
-  drawButton(middle + 160, buttonY, 130, 28, "Next part", COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  // (A game from the wheel gets "Spin again" instead of "Something else".)
+  if (part.wheel) drawButton(middle, buttonY, 170, 28, "Spin again", COLORS.cream, COLORS.text, spinWheel);
+  else drawButton(middle, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+  drawButton(middle + 160, buttonY, 130, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+}
+
+// "Next part", or "The end 💗" on the last part.
+function nextPartText() {
+  return state.dateNight.step >= DATE_NIGHT.parts.length ? "The end 💗" : "Next part";
+}
+
+// An activity from your plan: its name, what to do, and buttons.
+function drawActivityCard(area, part, step) {
+  const middle = (area.left + area.right) / 2;
+  drawPartLabel(area, step, COLORS.text);
+  const card = { left: area.left + 30, top: area.top + 28, right: area.right - 30, bottom: area.bottom - 48 };
+  steppedBox(card.left, card.top, card.right, card.bottom, 4, COLORS.white, COLORS.text, 2);
+  drawPixels(HEART, card.left + 18, card.top + 20, 4, COLORS.heart);
+  write("Activity time!", card.left + 70, card.top + 18, FONTS.small, COLORS.heart, "left", "top");
+  // The name, as big as fits (from 24 pixels tall down to 12).
+  let nameSize = 24;
+  ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
+  while (nameSize > 12 && ctx.measureText(part.name).width > card.right - card.left - 90) {
+    nameSize--;
+    ctx.font = `bold ${nameSize}px ${PIXEL_FONT}`;
+  }
+  write(part.name, card.left + 70, card.top + 32, ctx.font, COLORS.text, "left", "top");
+  drawGameSteps(card, part.steps, card.top + 76);
+
+  // The buttons: "Open link" (if it has one) and Next.
+  const buttonY = area.bottom - 24;
+  if (part.link) {
+    drawButton(middle - 90, buttonY, 150, 28, "Open link", COLORS.cream, COLORS.text, () => {
+      playSound("click");
+      window.open(part.link, "_blank");
+    });
+    drawButton(middle + 90, buttonY, 150, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  } else {
+    drawButton(middle, buttonY, 150, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  }
 }
 
 // A movie part: the little cinema, with curtains that slide open to show the poster.
@@ -7924,8 +8077,10 @@ function drawCinema(area, time, step) {
   // The buttons, once the curtains are open.
   if (opened >= 1) {
     const buttonY = area.bottom - 20;
-    drawButton(middle - 95, buttonY, 170, 26, "Something else", COLORS.cream, COLORS.text, openDatePicker);
-    drawButton(middle + 95, buttonY, 170, 26, "The end 💗", COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+    // (A movie from the wheel gets "Spin again" instead of "Something else".)
+    if (DATE_NIGHT.parts[step - 1].wheel) drawButton(middle - 95, buttonY, 170, 26, "Spin again", COLORS.cream, COLORS.text, spinWheel);
+    else drawButton(middle - 95, buttonY, 170, 26, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+    drawButton(middle + 95, buttonY, 170, 26, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
   }
 }
 
@@ -7941,7 +8096,7 @@ function drawCurtain(left, top, width, height) {
 // else), or a cute pixel poster with the name on it.
 function drawPoster(box, name, step) {
   const width = box.right - box.left, height = box.bottom - box.top;
-  if (hasPoster && !state.dateNight.picks[step]) {
+  if (hasPoster && DATE_NIGHT.parts[step - 1].poster && !state.dateNight.picks[step]) {
     ctx.drawImage(posterImage, box.left, box.top, width, height);
   } else {
     ctx.fillStyle = COLORS.titleBar;
@@ -7967,6 +8122,318 @@ function drawDateEnd(area, time) {
   write(`I love you, ${OTHER} 💗`, middle, area.top + 145, FONTS.body, COLORS.heart);
   drawButton(middle, area.bottom - 40, 190, 32, "Back to desktop", COLORS.cream, COLORS.text, closeWindow);
 }
+
+// ---------- The spin wheels (game and movie/show) ----------
+//
+// Either of you clicks Spin. This computer picks what it lands on and saves it (in
+// "picks", like "Something else" does), with a spin count so "Spin again" on the same
+// thing still spins. Both computers see the pick change and play the same spin,
+// landing on the same slice. Then the game card or the little cinema shows it.
+
+const WHEEL_SECONDS = 4.5;         // how long a spin takes
+const WHEEL_REVEAL_SECONDS = 1.6;  // how long it shows "It's ___!" before the card
+const WHEEL_COLORS = ["#F8BFCB", "#FFF7EE", "#C9B6F2", "#FFE08A", "#BFE3F2"];
+
+let wheelAngle = 0;     // how far the wheel is turned right now (on this computer)
+let wheelSpin = null;   // the spin that's playing: { step, from, to, startedAt, lastSlice }
+const seenSpins = {};   // the last pick seen on each wheel (to notice new spins)
+
+// The Spin button (and "Spin again").
+function spinWheel() {
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  if (!part || !part.wheel || wheelSpin) return;
+  playSound("click");
+  const winner = part.wheel[Math.floor(Math.random() * part.wheel.length)];
+  const picks = { ...state.dateNight.picks, [step]: winner, [`spin${step}`]: (state.dateNight.picks[`spin${step}`] || 0) + 1 };
+  curtainForStep = null;    // so the cinema's curtains open again for it
+  saveDateNight({ picks });
+}
+
+// Each frame: did someone just spin? Then play the spin here too.
+// (The first time a wheel shows up, it just remembers what's there, so opening the
+// window later doesn't replay an old spin.)
+function noticeSpin() {
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  if (!part || !part.wheel) return;
+  const picks = state.dateNight.picks;
+  const key = `${DATE_NIGHT.id}:${state.datePreview ? "preview" : ""}${step}`;   // (a preview's spins are kept apart)
+  const now = `${picks[step] || ""}|${picks[`spin${step}`] || 0}`;
+  if (seenSpins[key] === now) return;
+  const seenBefore = key in seenSpins;
+  seenSpins[key] = now;
+  if (seenBefore && picks[step]) startWheelSpin(part, step, picks[step]);
+}
+
+// Starts the spin so it lands on this one (5 or so full turns, then slows down).
+function startWheelSpin(part, step, winner) {
+  const number = part.wheel.indexOf(winner);
+  if (number < 0) return;    // (not on the wheel anymore? just show it)
+  const slice = Math.PI * 2 / part.wheel.length;
+  const from = wheelAngle % (Math.PI * 2);
+  // The pointer is at the top. Turn so the middle of the winner's slice is under it
+  // (plus a little wiggle, so it doesn't always stop dead center).
+  let to = -Math.PI / 2 - (number + 0.5) * slice + (Math.random() - 0.5) * slice * 0.6;
+  while (to < from + Math.PI * 2 * 5) to += Math.PI * 2;
+  curtainForStep = null;
+  wheelSpin = { step, from, to, startedAt: performance.now(), lastSlice: null, landed: false };
+}
+
+// Draws the wheel part: the wheel, the pointer, and the Spin button.
+function drawWheel(area, time, part, step) {
+  const middle = (area.left + area.right) / 2;
+  const isMovie = part.kind === "movie";
+  const textColor = isMovie ? CINEMA.gold : COLORS.text;
+  if (isMovie) {
+    // The movie wheel is in the dark theater, like the cinema.
+    ctx.fillStyle = CINEMA.wall;
+    ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+  }
+  drawPartLabel(area, step, textColor);
+
+  // Turn the wheel (if it's spinning).
+  const options = part.wheel;
+  const slice = Math.PI * 2 / options.length;
+  let landedOn = null;
+  if (wheelSpin && wheelSpin.step === step) {
+    const seconds = (performance.now() - wheelSpin.startedAt) / 1000;
+    const done = keepBetween(seconds / WHEEL_SECONDS, 0, 1);
+    const eased = 1 - Math.pow(1 - done, 4);     // fast at first, slows down at the end
+    wheelAngle = wheelSpin.from + (wheelSpin.to - wheelSpin.from) * eased;
+    // A soft tick each time a new slice passes the pointer.
+    const under = Math.floor((((-Math.PI / 2 - wheelAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / slice);
+    if (wheelSpin.lastSlice !== null && under !== wheelSpin.lastSlice && done < 1) playKeySound(0.12);
+    wheelSpin.lastSlice = under;
+    if (done >= 1) {
+      landedOn = state.dateNight.picks[step];
+      if (!wheelSpin.landed) {
+        wheelSpin.landed = true;
+        playSound("coin", 0.5);
+      }
+      // After a moment, the card (or cinema) takes over.
+      if (seconds > WHEEL_SECONDS + WHEEL_REVEAL_SECONDS) wheelSpin = null;
+    }
+  }
+
+  // The wheel itself, on the left side (as big as fits).
+  const radius = Math.min(118, (area.bottom - area.top - 60) / 2);
+  const centerX = area.left + (area.right - area.left) * 0.33, centerY = area.top + 38 + radius;
+  ctx.save();
+  for (let number = 0; number < options.length; number++) {
+    // (The last slice never gets the same color as the first one next to it.)
+    let color = WHEEL_COLORS[number % WHEEL_COLORS.length];
+    if (number > 0 && number === options.length - 1 && number % WHEEL_COLORS.length === 0) color = WHEEL_COLORS[2];
+    const start = wheelAngle + number * slice;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, radius, start, start + slice);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.text;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // The words, along the middle of the slice, ending near the edge.
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(start + slice / 2);
+    // (The words shrink to fit, down to 9 pixels tall, then get cut off with "…".
+    // The full names are in the list on the right.)
+    let words = options[number];
+    const room = radius - 30;
+    let size = 13;
+    ctx.font = `bold ${size}px ${PIXEL_FONT}`;
+    while (size > 9 && ctx.measureText(words).width > room) {
+      size--;
+      ctx.font = `bold ${size}px ${PIXEL_FONT}`;
+    }
+    if (ctx.measureText(words).width > room) {
+      while (words.length > 1 && ctx.measureText(`${words}…`).width > room) words = words.slice(0, -1);
+      words = `${words.trim()}…`;
+    }
+    write(words, radius - 10, 0, ctx.font, COLORS.text, "right");
+    ctx.restore();
+  }
+  // The thick rim, with little lights around it (they blink while it spins).
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  for (let bulb = 0; bulb < 24; bulb++) {
+    const angle = bulb * Math.PI * 2 / 24;
+    const on = Math.floor(time / (wheelSpin ? 120 : 500) + bulb) % 2 === 0;
+    ctx.fillStyle = on ? CINEMA.gold : "#C9A86A";
+    ctx.fillRect(Math.round(centerX + Math.cos(angle) * (radius + 7)) - 2, Math.round(centerY + Math.sin(angle) * (radius + 7)) - 2, 4, 4);
+  }
+  // The middle, with a heart.
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 16, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.cream;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  drawPixels(HEART, centerX - 7, centerY - 6, 2, COLORS.heart);
+  // The pointer at the top.
+  ctx.beginPath();
+  ctx.moveTo(centerX - 11, centerY - radius - 16);
+  ctx.lineTo(centerX + 11, centerY - radius - 16);
+  ctx.lineTo(centerX, centerY - radius + 6);
+  ctx.closePath();
+  ctx.fillStyle = COLORS.heart;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  // On the right: the title, everything on the wheel, and the Spin button.
+  const column = { left: centerX + radius + 40, right: area.right - 24 };
+  const columnMiddle = (column.left + column.right) / 2;
+  const width = column.right - column.left;
+  const title = isMovie ? "Spin for our movie!" : "Spin for our game!";
+  write(title, columnMiddle, area.top + 48, fontThatFits(title, width), isMovie ? COLORS.white : COLORS.text);
+  // The list (two columns if it's long). The one it landed on is pink.
+  const twoColumns = options.length > 8;
+  const rows = twoColumns ? Math.ceil(options.length / 2) : options.length;
+  const rowHeight = Math.min(18, (area.bottom - area.top - 150) / rows);
+  options.forEach((option, number) => {
+    const inSecond = twoColumns && number >= rows;
+    const x = column.left + (inSecond ? width / 2 : 0);
+    const y = area.top + 78 + (inSecond ? number - rows : number) * rowHeight;
+    const isIt = landedOn && option === landedOn;
+    const color = isIt ? COLORS.heart : textColor;
+    let words = option;
+    ctx.font = FONTS.note;
+    const room = (twoColumns ? width / 2 : width) - 18;
+    while (words.length > 1 && ctx.measureText(words).width > room) words = words.slice(0, -1);
+    if (words !== option) words = `${words.trim()}…`;
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 2, y - 2, 4, 4);       // a little bullet
+    write(words, x + 12, y, FONTS.note, color, "left");
+  });
+
+  const bottomY = area.bottom - 30;
+  if (landedOn) {
+    write(`It's ${landedOn}!`, columnMiddle, bottomY, fontThatFits(`It's ${landedOn}!`, width), isMovie ? COLORS.white : COLORS.heart);
+  } else if (!wheelSpin) {
+    drawButton(columnMiddle, bottomY, 150, 32, "Spin!", COLORS.acceptFill, COLORS.acceptText, spinWheel);
+  }
+}
+
+
+// ---------- "Edit plan" (your side only) ----------
+//
+// The activities and what goes on each wheel. Saving it doesn't ping him or show him
+// anything. His computer only shows it once you two start the date.
+
+const datePlanPanel = makePanel("dateplan", `
+  <form class="plan reschedule dateplan">
+    <p class="big">Date night plan</p>
+    <p class="hint"></p>
+    <p class="section">Activities (in order)</p>
+    <div class="activities"></div>
+    <button type="button" class="cancel add">+ Add activity</button>
+    <p class="section">Game wheel (one game per line)</p>
+    <textarea name="games" rows="5" maxlength="1500" placeholder="Unsolved Case&#10;Stardew Valley&#10;..."></textarea>
+    <p class="section">Movie / show wheel (one per line)</p>
+    <textarea name="movies" rows="5" maxlength="1500" placeholder="Corpse Bride&#10;Coraline&#10;..."></textarea>
+    <p class="problem"></p>
+    <div class="two">
+      <button type="button" class="cancel close">Cancel</button>
+      <button>Save plan</button>
+    </div>
+  </form>`);
+const datePlanForm = datePlanPanel.querySelector("form");
+const activityList = datePlanPanel.querySelector(".activities");
+
+// Adds one activity's boxes: its name, what to do, and a link (both optional).
+function addActivityRow(activity = { name: "", steps: [], link: "" }) {
+  const row = document.createElement("div");
+  row.className = "activity";
+  row.innerHTML = `
+    <div class="activity-top">
+      <input class="name" maxlength="40" placeholder="Activity (like: Draw each other)" autocomplete="off">
+      <button type="button" class="cancel remove" title="Remove">✕</button>
+    </div>
+    <textarea class="steps" rows="2" maxlength="400" placeholder="What to do (one step per line, optional)"></textarea>
+    <input class="link" maxlength="300" placeholder="Link (optional)" autocomplete="off">`;
+  row.querySelector(".name").value = activity.name || "";
+  row.querySelector(".steps").value = (activity.steps || []).join("\n");
+  row.querySelector(".link").value = activity.link || "";
+  row.querySelector(".remove").addEventListener("click", () => {
+    playSound("click");
+    row.remove();
+  });
+  activityList.appendChild(row);
+  return row;
+}
+
+datePlanPanel.querySelector(".add").addEventListener("click", () => {
+  playSound("click");
+  addActivityRow().querySelector(".name").focus();
+});
+datePlanPanel.querySelector(".close").addEventListener("click", () => {
+  playSound("click");
+  state.datePlanning = false;
+});
+
+// Opens the box, filled in with your saved plan.
+function openPlanEditor() {
+  playSound("click");
+  const plan = state.datePlan || { activities: [], games: [], movies: [] };
+  activityList.innerHTML = "";
+  plan.activities.forEach(activity => addActivityRow(activity));
+  if (!plan.activities.length) addActivityRow();
+  datePlanForm.elements.games.value = plan.games.join("\n");
+  datePlanForm.elements.movies.value = plan.movies.join("\n");
+  // Which invite it goes with.
+  const invite = inviteForPlan();
+  datePlanPanel.querySelector(".hint").textContent = invite
+    ? `Goes with your invite for ${longDayIn(invite.when.toDate(), MY_TIME_ZONE)}, ${timeIn(invite.when.toDate(), MY_TIME_ZONE)}. ${OTHER} only sees it once the date starts.`
+    : `Send the invite with Plan a date (any time), and this goes with it. ${OTHER} only sees it once the date starts.`;
+  datePlanPanel.querySelector(".problem").textContent = "";
+  state.datePlanning = true;
+}
+
+datePlanForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const problem = datePlanPanel.querySelector(".problem");
+  const lines = text => text.split("\n").map(line => line.trim()).filter(Boolean);
+  const activities = [...activityList.querySelectorAll(".activity")].map(row => ({
+    name: row.querySelector(".name").value.trim(),
+    steps: lines(row.querySelector(".steps").value),
+    link: row.querySelector(".link").value.trim(),
+  })).filter(activity => activity.name);
+  const games = lines(datePlanForm.elements.games.value);
+  const movies = lines(datePlanForm.elements.movies.value);
+  if (!activities.length && !games.length && !movies.length) {
+    problem.textContent = "Add an activity or something on a wheel first!";
+    return;
+  }
+  if (!database || state.online !== "ok") {
+    problem.textContent = "Sign in first (you're not connected).";
+    return;
+  }
+  problem.textContent = "Saving...";
+  try {
+    // (Saved as plain text inside "picks", because that's what the rules allow here.)
+    await database.collection("datenight").doc("plan").set({
+      step: 0,
+      picks: { activities: JSON.stringify(activities), games: games.join("\n"), movies: movies.join("\n") },
+      by: ME,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    problem.textContent = "";
+    playSound("coin", 0.5);
+    state.datePlanning = false;
+  } catch (trouble) {
+    console.log("Couldn't save the plan:", trouble);
+    problem.textContent = "Couldn't save. Try again?";
+    playSound("buzzer", BUZZER_VOLUME);
+  }
+});
+
 
 // The "Something else" box: your backup ideas as buttons, or type your own.
 const datePickPanel = makePanel("datepick", `

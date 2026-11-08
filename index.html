@@ -169,6 +169,14 @@
     .choices { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
     .choices:empty { display: none; }
 
+    /* The "Edit plan" box for date night: one little box per activity. */
+    .dateplan .activity { border: 2px dashed #C98298; padding: 4px; margin-bottom: 5px; }
+    .dateplan .activity > * { margin-bottom: 3px; }
+    .dateplan .activity-top { display: flex; gap: 4px; }
+    .dateplan .activity-top button { flex: none; padding: 2px 8px; }
+    .dateplan .add { width: 100%; margin-bottom: 4px; }
+    .dateplan .two { margin-top: 4px; }
+
     /* The floating "Pop out" window: just the computer, cut off at the window's edges. */
     body.floating { overflow: hidden; background: #45284A; }
 
