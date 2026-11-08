@@ -8452,7 +8452,7 @@ const datePlanPanel = makePanel("dateplan", `
     <div class="activities"></div>
     <button type="button" class="cancel add">+ Add activity</button>
     <p class="section">Game wheel</p>
-    <p class="tip">Click the photo box to pick a picture, or copy a picture and paste it (Ctrl+V) into the name box.</p>
+    <p class="tip">Copy a picture, click the name it's for, and press Ctrl+V. Or click the photo box to pick a saved picture.</p>
     <div class="choices-list games"></div>
     <button type="button" class="cancel add-game">+ Add game</button>
     <p class="section">Movie / show wheel</p>
@@ -8554,20 +8554,93 @@ function addChoiceRow(list, name = "", photo = "") {
     playSound("click");
     row.remove();
   });
-  // Pasting a copied picture (Ctrl+V) into this choice gives it that photo.
-  row.addEventListener("paste", async event => {
-    const item = [...(event.clipboardData ? event.clipboardData.items : [])].find(thing => thing.type.startsWith("image/"));
-    if (!item) return;     // (just words: paste them like normal)
-    event.preventDefault();
-    try {
-      setRowPhoto(row, await shrinkPhoto(item.getAsFile()));
-      playSound("coin", 0.4);
-    } catch (problem) {
-      console.log("Couldn't use that picture:", problem);
-    }
-  });
+  // Clicking anywhere on a choice makes it the one a pasted picture goes to.
+  row.addEventListener("pointerdown", () => { pasteRow = row; });
+  row.addEventListener("focusin", () => { pasteRow = row; });
   list.appendChild(row);
   return row;
+}
+
+// ----- Pasting a picture (Ctrl+V) -----
+// It goes on the choice you last clicked. Copied pictures come in a few ways:
+//   - the picture itself ("Copy image" in the browser, or a screenshot)
+//   - a picture file (copied in File Explorer)
+//   - just a LINK to the picture (some websites copy it that way)
+let pasteRow = null;
+
+// A picture from a link: shrinks it if the website allows that, or else keeps the link.
+function photoFromLink(link) {
+  return new Promise(resolve => {
+    const picture = new Image();
+    picture.crossOrigin = "anonymous";
+    picture.onload = () => {
+      try {
+        const scale = Math.min(1, 200 / Math.max(picture.naturalWidth, picture.naturalHeight));
+        const small = document.createElement("canvas");
+        small.width = Math.max(1, Math.round(picture.naturalWidth * scale));
+        small.height = Math.max(1, Math.round(picture.naturalHeight * scale));
+        const pen = small.getContext("2d");
+        pen.fillStyle = "#FFFFFF";
+        pen.fillRect(0, 0, small.width, small.height);
+        pen.drawImage(picture, 0, 0, small.width, small.height);
+        resolve(small.toDataURL("image/jpeg", 0.8));
+      } catch (problem) {
+        resolve(link);
+      }
+    };
+    // (The website said no to shrinking it: keep the link, it still shows.)
+    picture.onerror = () => {
+      const plain = new Image();
+      plain.onload = () => resolve(link);
+      plain.onerror = () => resolve(null);    // not a picture after all
+      plain.src = link;
+    };
+    picture.src = link;
+  });
+}
+
+// (Pastes inside the box, and anywhere else on the page while the box is open.)
+datePlanPanel.addEventListener("paste", pastePlanPhoto);
+document.addEventListener("paste", event => {
+  if (state.datePlanning && !datePlanPanel.contains(event.target)) pastePlanPhoto(event);
+});
+
+async function pastePlanPhoto(event) {
+  const clip = event.clipboardData;
+  if (!clip) return;
+  // Which choice: the one you're typing in or last clicked.
+  const row = event.target.closest(".choice") || (pasteRow && pasteRow.isConnected ? pasteRow : null);
+  const problem = datePlanPanel.querySelector(".problem");
+  // 1. The picture itself, or a picture file.
+  const file = [...clip.files].find(thing => thing.type.startsWith("image/")) ||
+               ([...clip.items].find(thing => thing.kind === "file" && thing.type.startsWith("image/")) || { getAsFile: () => null }).getAsFile();
+  // 2. A link to a picture (inside copied web page bits, or plain text that's a link).
+  const html = clip.getData("text/html");
+  const htmlLink = html && (html.match(/<img[^>]+src="([^"]+)"/i) || [])[1];
+  const text = clip.getData("text/plain").trim();
+  const textLink = /^https?:\/\/\S+$/i.test(text) ? text : null;
+  const link = htmlLink && /^(https?:|data:image)/i.test(htmlLink) ? htmlLink.replace(/&amp;/g, "&") : textLink;
+  if (!file && !link) return;                   // just words: paste them like normal
+  if (!row) {
+    if (file || htmlLink) {
+      event.preventDefault();
+      problem.textContent = "Click the game or movie the picture is for first, then paste.";
+    }
+    return;
+  }
+  if (!file && !htmlLink && event.target.closest(".name")) return;   // a link typed in a name box: just paste it
+  event.preventDefault();
+  problem.textContent = "Adding the picture...";
+  try {
+    const photo = file ? await shrinkPhoto(file) : await photoFromLink(link);
+    if (!photo) throw new Error("not a picture");
+    setRowPhoto(row, photo);
+    problem.textContent = "";
+    playSound("coin", 0.4);
+  } catch (trouble) {
+    console.log("Couldn't use that picture:", trouble);
+    problem.textContent = "Couldn't use that picture. Try saving it, then click the photo box to pick it.";
+  }
 }
 
 // A picture picked with the file picker goes on the choice that asked for it.
