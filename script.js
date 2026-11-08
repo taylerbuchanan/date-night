@@ -2461,9 +2461,12 @@ function longDayIn(date, timeZone) {
   return date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone });
 }
 
-// "Friday, Nov 6" + "9:00 PM your time, 2:00 PM Tayler's time"
-function bothTimes(date) {
-  return `${longDayIn(date, MY_TIME_ZONE)}\n${timeIn(date, MY_TIME_ZONE)} your time, ${timeIn(date, OTHER_TIME_ZONE)} ${OTHER}'s time`;
+// The "When" on an invite: one time ("Friday, Nov 6" + "9:00 PM your time, 2:00 PM Tayler's
+// time"), or a window like "Sometime between 9:00 PM–12:00 AM
+// your time, 2:00–5:00 PM Tayler's time" (minutes = how long the window is, 0 = one time).
+function whenText(date, minutes, yourZone, theirZone, theirName) {
+  if (!minutes) return `${longDayIn(date, yourZone)}\n${timeIn(date, yourZone)} your time, ${timeIn(date, theirZone)} ${theirName}'s time`;
+  return `${longDayIn(date, yourZone)}, sometime between\n${timeRange(date, minutes, yourZone)} your time, ${timeRange(date, minutes, theirZone)} ${theirName}'s time`;
 }
 
 // A date like "Oct 26, 9:15 PM".
@@ -2493,7 +2496,7 @@ function remoteInvite(date) {
     title: date.title,
     plan: date.plan,
     bring: date.bring,
-    when: bothTimes(when),
+    when: whenText(when, inviteWindow(date), MY_TIME_ZONE, OTHER_TIME_ZONE, OTHER),
     declines: date.declines && date.declines.length ? date.declines : null,
     colors: date.colors || null,
   };
@@ -2542,7 +2545,11 @@ function declinesFor(invite) {
 async function sendDate(form) {
   if (blockedInPreview()) throw new Error("preview");
   const when = zonedTimeToDate(form.day, form.time, MY_TIME_ZONE);
-  await database.collection("dates").add({
+  // (Get the invite's id first, so the start window can be saved before it shows up for him.
+  // If the window doesn't save, the invite still goes out, just with the one start time.)
+  const invite = database.collection("dates").doc();
+  try { await saveInviteWindow(invite.id, form.minutes); } catch (trouble) { console.log("Couldn't save the window:", trouble); }
+  await invite.set({
     from: ME,
     to: OTHER,
     opening: form.opening,
@@ -2559,6 +2566,7 @@ async function sendDate(form) {
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   });
   pingOther(`📅 ${ME} planned a date for you! Open the little computer to see it 💌`);
+  return invite.id;
 }
 
 // Accepting a planned date.
@@ -2921,6 +2929,7 @@ const planPanel = makePanel("plan", `
       <div class="two">
         <label>Day <input name="day" type="date" required></label>
         <label>Time (yours) <input name="time" type="time" step="900" value="21:00" required></label>
+        <label>Until (optional) <input name="until" type="time" step="900"></label>
       </div>
       <p class="hint"></p>
       <p class="section">Decline jokes (one for each time they click Decline)</p>
@@ -2950,7 +2959,53 @@ function updatePlanHint() {
     return;
   }
   const when = zonedTimeToDate(day.value, time.value, MY_TIME_ZONE);
-  hint.textContent = `That's ${timeIn(when, OTHER_TIME_ZONE)} on ${longDayIn(when, OTHER_TIME_ZONE)} for ${OTHER}.`;
+  const minutes = windowMinutes(time.value, planForm.elements.until.value);
+  hint.textContent = minutes
+    ? `That's ${timeRange(when, minutes, OTHER_TIME_ZONE)} on ${longDayIn(when, OTHER_TIME_ZONE)} for ${OTHER}. You can start any time in there.`
+    : `That's ${timeIn(when, OTHER_TIME_ZONE)} on ${longDayIn(when, OTHER_TIME_ZONE)} for ${OTHER}.`;
+}
+
+// ---------- A time RANGE for the start ("Until", in Plan a date) ----------
+//
+// For when you don't know your work stuff yet: the date can start any time between
+// "Time" and "Until". It's saved with your date night plan (in "picks", as rangeFor = which
+// invite, rangeMinutes = how long the window is), because the "dates" rules don't allow a new field.
+// (If he suggests a new time, the window just moves with it.)
+
+// How many minutes from "time" to "until" (like "14:00" to "17:00" = 180), or 0 for no range.
+// (An "until" earlier than "time" means after midnight.)
+function windowMinutes(time, until) {
+  if (!time || !until) return 0;
+  const toMinutes = text => Number(text.split(":")[0]) * 60 + Number(text.split(":")[1]);
+  const minutes = (toMinutes(until) - toMinutes(time) + 24 * 60) % (24 * 60);
+  return minutes;
+}
+
+// "2:00–5:00 PM" (or "11:00 AM–2:00 PM") in one time zone.
+function timeRange(start, minutes, timeZone) {
+  const end = new Date(start.getTime() + minutes * 60000);
+  const from = timeIn(start, timeZone), to = timeIn(end, timeZone);
+  const sameHalf = from.slice(-2) === to.slice(-2);
+  return `${sameHalf ? from.slice(0, -3) : from}–${to}`;
+}
+
+// How long the start window is for this invite (from Firebase), in minutes (0 = no window).
+function inviteWindow(date) {
+  const plan = state.datePlan;
+  if (!date || !plan || plan.rangeFor !== date.id) return 0;
+  return Number(plan.rangeMinutes) || 0;
+}
+
+// Saves the window for an invite you just sent (with your plan, so it's kept when you save the plan).
+async function saveInviteWindow(dateId, minutes) {
+  if (!minutes) return;
+  if (state.datePlan) Object.assign(state.datePlan, { rangeFor: dateId, rangeMinutes: String(minutes) });
+  await database.collection("datenight").doc("plan").set({
+    step: 0,
+    picks: { rangeFor: dateId, rangeMinutes: String(minutes) },
+    by: ME,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 planForm.addEventListener("input", updatePlanHint);
 
@@ -2967,6 +3022,7 @@ function planFormValues() {
     bring: field("bring") || "Your cute self",
     day: field("day"),
     time: field("time"),
+    minutes: windowMinutes(field("time"), field("until")),    // the start window (0 = just one time)
     declines: DECLINE_MESSAGES.map((joke, number) => field(`decline${number}`) || joke),
     colors,
   };
@@ -2985,7 +3041,7 @@ planPanel.querySelector(".preview").addEventListener("click", () => {
     plan: form.plan,
     bring: form.bring,
     // (The preview shows the time the way the other person will see it.)
-    when: when ? `${longDayIn(when, OTHER_TIME_ZONE)}\n${timeIn(when, OTHER_TIME_ZONE)} your time, ${timeIn(when, MY_TIME_ZONE)} ${ME}'s time`
+    when: when ? whenText(when, form.minutes, OTHER_TIME_ZONE, MY_TIME_ZONE, ME)
                : "(pick a day and time)",
     declines: form.declines,
     colors: form.colors,
@@ -7638,7 +7694,8 @@ function readDatePlan(data) {
   let activities = [], photos = {};
   try { activities = JSON.parse(picks.activities || "[]"); } catch (problem) {}
   try { photos = JSON.parse(picks.photos || "{}"); } catch (problem) {}
-  return { activities, games: lines(picks.games), movies: lines(picks.movies), photos };
+  return { activities, games: lines(picks.games), movies: lines(picks.movies), photos,
+           rangeFor: picks.rangeFor || "", rangeMinutes: picks.rangeMinutes || "" };   // (the start window, see inviteWindow)
 }
 
 // The photo for a wheel choice (a loaded picture), or null if it doesn't have one.
@@ -7679,7 +7736,8 @@ function refreshDateNight() {
   if (parts.length && invite) {
     // Your plan, at your invite's time. (Same id as the invite, so it shows in Memories too.)
     const when = invite.when.toDate();
-    next = { id: `remote:${invite.id}`, date: dayIn(when, MY_TIME_ZONE), startsAtTime: when.getTime(), parts };
+    next = { id: `remote:${invite.id}`, date: dayIn(when, MY_TIME_ZONE), startsAtTime: when.getTime(), parts,
+             windowMinutes: inviteWindow(invite) };    // (a start window, if you picked "Until")
   } else if (parts.length && IS_TAYLER) {
     // Your side, before you've sent the invite: no time yet, but you can still Preview it.
     // (His side keeps the old one until the invite is sent.)
@@ -7795,7 +7853,9 @@ function checkDateTime() {
   const seen = `${SIDE}:datestart:${DATE_NIGHT.id}`;
   if (now < DATE_NIGHT_START || now > tooLate || remembers(seen)) return;
   remember(seen);
-  notify("DATE TIME", "It's time for our date! 💗 Ready?", { text: "Start", noText: "Not yet", onClick: openDateNightFromPopup });
+  const message = DATE_NIGHT.windowMinutes ? "Our date window is open! 💗 Start whenever we're both ready."
+                                           : "It's time for our date! 💗 Ready?";
+  notify("DATE TIME", message, { text: "Start", noText: "Not yet", onClick: openDateNightFromPopup });
 }
 checkDateTime();
 setInterval(checkDateTime, 20000);
@@ -7845,18 +7905,21 @@ function endDatePreview() {
   state.datePicking = false;
   curtainForStep = null;
   wheelSpin = null;
+  state.vetoing = false;
   // (Forget the preview's spins, so the next preview starts fresh.)
   Object.keys(seenSpins).filter(key => key.includes(":preview")).forEach(key => delete seenSpins[key]);
 }
 function nextDatePart() {
   playSound("click");
   state.datePicking = false;
+  state.vetoing = false;
   saveDateNight({ step: state.dateNight.step + 1 });
 }
 // Back one part (from the first part, back to the start screen). Moves both of you.
 function previousDatePart() {
   playSound("click");
   state.datePicking = false;
+  state.vetoing = false;
   curtainForStep = null;     // so the cinema's curtains open again
   // (Looking back from Memories, it stops at Part 1 instead of the countdown.)
   const first = state.datePreview && state.datePreview.lookBack ? 1 : 0;
@@ -7930,16 +7993,25 @@ function drawDateWaiting(area, time) {
     write("and this plan goes with it 💗", middle, area.top + 168, FONTS.body, COLORS.text);
     write("(Preview shows you the whole date)", middle, area.top + 200, FONTS.note, COLORS.heart);
   } else if (left > 0) {
-    const hours = Math.floor(left / 3600000), minutes = Math.ceil((left % 3600000) / 60000);
+    // (Count whole minutes first, so it never says "60m".)
+    const totalMinutes = Math.ceil(left / 60000);
+    const hours = Math.floor(totalMinutes / 60), minutes = totalMinutes % 60;
     const countdown = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
-    write("Our date starts in", middle, area.top + 95, FONTS.body, COLORS.text);
+    // (With a start window, it counts down to when the window opens.)
+    const range = DATE_NIGHT.windowMinutes;
+    write(range ? "Our date window opens in" : "Our date starts in", middle, area.top + 95, FONTS.body, COLORS.text);
     write(countdown, middle, area.top + 135, FONTS.letterTitle, COLORS.heart);
-    const clock = new Date(DATE_NIGHT_START).toLocaleTimeString("en-US", { timeZone: MY_TIME_ZONE, hour: "numeric", minute: "2-digit" });
+    const clock = range ? `sometime ${timeRange(new Date(DATE_NIGHT_START), range, MY_TIME_ZONE)}`
+                        : timeIn(new Date(DATE_NIGHT_START), MY_TIME_ZONE);
     write(`(${clock} your time)`, middle, area.top + 170, FONTS.note, COLORS.text);
     drawButton(middle, area.bottom - 40, 150, 30, "Start early", COLORS.cream, COLORS.text, startDateNight);
   } else {
     write("It's date time!", middle, area.top + 110, FONTS.letterTitle, COLORS.text);
-    write("Grab your snacks and hop in a call 💗", middle, area.top + 150, FONTS.body, COLORS.text);
+    // (With a start window: whenever you're both ready, before it closes.)
+    const range = DATE_NIGHT.windowMinutes;
+    const until = range ? timeIn(new Date(DATE_NIGHT_START + range * 60000), MY_TIME_ZONE) : "";
+    write(range ? `Start whenever we're both ready (until ${until}) 💗` : "Grab your snacks and hop in a call 💗",
+          middle, area.top + 150, FONTS.body, COLORS.text);
     drawButton(middle, area.bottom - 50, 170, 36, "Start date", COLORS.acceptFill, COLORS.acceptText, startDateNight);
   }
 }
@@ -8117,13 +8189,24 @@ function drawGameSteps(card, steps, top) {
 
 // The buttons along the bottom of the game room. (No Steam button: you're gifting him the game!)
 function drawGameCardButtons(area) {
+  drawPickedButtons(area, area.bottom - 24, 28);
+}
+
+// The buttons under a game or movie: "Veto it" (if it came from the wheel and you still
+// have your veto), "Spin again" (or "Something else"), and Next / The end.
+function drawPickedButtons(area, buttonY, height) {
   const middle = (area.left + area.right) / 2;
-  const buttonY = area.bottom - 24;
-  const part = DATE_NIGHT.parts[state.dateNight.step - 1];
-  // (A game from the wheel gets "Spin again" instead of "Something else".)
-  if (part.wheel) drawButton(middle - 95, buttonY, 170, 28, "Spin again", COLORS.cream, COLORS.text, spinWheel);
-  else drawButton(middle - 95, buttonY, 170, 28, "Something else", COLORS.cream, COLORS.text, openDatePicker);
-  drawButton(middle + 95, buttonY, 170, 28, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  const veto = part.wheel && canVeto(part, step);
+  // (Three buttons with the veto, two without.)
+  const spots = veto ? [middle - 160, middle, middle + 160] : [null, middle - 95, middle + 95];
+  const sizes = veto ? [120, 150, 150] : [0, 170, 170];
+  if (veto) drawButton(spots[0], buttonY, sizes[0], height, "Veto it", COLORS.cream, COLORS.text, vetoAndRespin);
+  // (Something from the wheel gets "Spin again" instead of "Something else".)
+  if (part.wheel) drawButton(spots[1], buttonY, sizes[1], height, "Spin again", COLORS.cream, COLORS.text, spinWheel);
+  else drawButton(spots[1], buttonY, sizes[1], height, "Something else", COLORS.cream, COLORS.text, openDatePicker);
+  drawButton(spots[2], buttonY, sizes[2], height, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
 }
 
 // "Next part", or "The end 💗" on the last part.
@@ -8238,11 +8321,7 @@ function drawCinema(area, time, step) {
 
   // The buttons, once the curtains are open.
   if (opened >= 1) {
-    const buttonY = area.bottom - 20;
-    // (A movie from the wheel gets "Spin again" instead of "Something else".)
-    if (DATE_NIGHT.parts[step - 1].wheel) drawButton(middle - 95, buttonY, 170, 26, "Spin again", COLORS.cream, COLORS.text, spinWheel);
-    else drawButton(middle - 95, buttonY, 170, 26, "Something else", COLORS.cream, COLORS.text, openDatePicker);
-    drawButton(middle + 95, buttonY, 170, 26, nextPartText(), COLORS.acceptFill, COLORS.acceptText, nextDatePart);
+    drawPickedButtons(area, area.bottom - 20, 26);
   }
 }
 
@@ -8303,13 +8382,61 @@ let wheelAngle = 0;     // how far the wheel is turned right now (on this comput
 let wheelSpin = null;   // the spin that's playing: { step, from, to, startedAt, lastSlice }
 const seenSpins = {};   // the last pick seen on each wheel (to notice new spins)
 
-// The Spin button (and "Spin again").
+// ---------- Vetoes ----------
+// Each of you gets ONE veto per wheel: it takes something off the wheel. You can veto
+// before spinning ("Veto one", then click it in the list), or after it lands ("Veto it":
+// that one comes off and the wheel spins again). Saved in "picks" (like "veto3_Jacob"),
+// so both computers see it.
+state.vetoing = false;     // are you picking one to veto right now?
+const vetoKey = (step, who) => `veto${step}_${who}`;
+
+// Who vetoed what on this wheel: [{ who: "Jacob", name: "Overcooked 2" }, ...]
+function vetoesOn(step) {
+  return [YOUR_NAME, RECIPIENT_NAME]
+    .map(who => ({ who, name: state.dateNight.picks[vetoKey(step, who)] }))
+    .filter(veto => veto.name);
+}
+// What's still on the wheel (everything minus the vetoes).
+function wheelChoices(part, step) {
+  const vetoed = vetoesOn(step).map(veto => veto.name);
+  const left = part.wheel.filter(name => !vetoed.includes(name));
+  return left.length ? left : part.wheel;     // (never an empty wheel)
+}
+// Can this person still veto on this wheel? (Once each, and there has to be something left.)
+function canVeto(part, step) {
+  return !state.dateNight.picks[vetoKey(step, ME)] && wheelChoices(part, step).length > 1;
+}
+
+// "Veto one" (before spinning): turns on picking, then clicking one in the list vetoes it.
+function startVetoing() {
+  playSound("click");
+  state.vetoing = !state.vetoing;
+}
+function vetoChoice(name) {
+  const step = state.dateNight.step;
+  playSound("click");
+  state.vetoing = false;
+  saveDateNight({ picks: { ...state.dateNight.picks, [vetoKey(step, ME)]: name } });
+}
+// "Veto it" (after it landed): that one comes off, and the wheel spins again.
+function vetoAndRespin() {
+  const step = state.dateNight.step;
+  const part = DATE_NIGHT.parts[step - 1];
+  if (!part || !part.wheel || wheelSpin || !canVeto(part, step)) return;
+  const picks = { ...state.dateNight.picks, [vetoKey(step, ME)]: state.dateNight.picks[step] };
+  state.dateNight.picks = picks;    // (so the new spin skips it)
+  spinWheel();
+}
+
+// The Spin button (and "Spin again"). It only lands on things that haven't been vetoed.
 function spinWheel() {
   const step = state.dateNight.step;
   const part = DATE_NIGHT.parts[step - 1];
   if (!part || !part.wheel || wheelSpin) return;
   playSound("click");
-  const winner = part.wheel[Math.floor(Math.random() * part.wheel.length)];
+  state.vetoing = false;
+  const choices = wheelChoices(part, step);
+  const winner = choices[Math.floor(Math.random() * choices.length)];
   const picks = { ...state.dateNight.picks, [step]: winner, [`spin${step}`]: (state.dateNight.picks[`spin${step}`] || 0) + 1 };
   curtainForStep = null;    // so the cinema's curtains open again for it
   saveDateNight({ picks });
@@ -8355,9 +8482,10 @@ function playWheelTick() {
 
 // Starts the spin so it lands on this one (5 or so full turns, then slows down).
 function startWheelSpin(part, step, winner) {
-  const number = part.wheel.indexOf(winner);
+  const choices = wheelChoices(part, step);     // (without the vetoed ones)
+  const number = choices.indexOf(winner);
   if (number < 0) return;    // (not on the wheel anymore? just show it)
-  const slice = Math.PI * 2 / part.wheel.length;
+  const slice = Math.PI * 2 / choices.length;
   const from = wheelAngle % (Math.PI * 2);
   // The pointer is at the top. Turn so the middle of the winner's slice is under it
   // (plus a little wiggle, so it doesn't always stop dead center).
@@ -8408,8 +8536,8 @@ function drawWheel(area, time, part, step) {
   }
   drawPartLabel(area, step, textColor);
 
-  // Turn the wheel (if it's spinning).
-  const options = part.wheel;
+  // Turn the wheel (if it's spinning). (Vetoed ones aren't on the wheel.)
+  const options = wheelChoices(part, step);
   const slice = Math.PI * 2 / options.length;
   let landedOn = null;
   if (wheelSpin && wheelSpin.step === step) {
@@ -8517,39 +8645,66 @@ function drawWheel(area, time, part, step) {
   const column = { left: centerX + radius + 40, right: area.right - 24 };
   const columnMiddle = (column.left + column.right) / 2;
   const width = column.right - column.left;
-  const title = isMovie ? "Spin for our movie!" : "Spin for our game!";
-  write(title, columnMiddle, area.top + 48, fontThatFits(title, width), isMovie ? COLORS.white : COLORS.text);
-  // The list (two columns if it's long). The one it landed on is pink.
-  const twoColumns = options.length > 8;
-  const rows = twoColumns ? Math.ceil(options.length / 2) : options.length;
-  const rowHeight = Math.min(18, (area.bottom - area.top - 150) / rows);
-  options.forEach((option, number) => {
+  const vetoing = state.vetoing && !wheelSpin;
+  const title = vetoing ? "Click one to veto!" : isMovie ? "Spin for our movie!" : "Spin for our game!";
+  write(title, columnMiddle, area.top + 48, fontThatFits(title, width), vetoing ? COLORS.heart : isMovie ? COLORS.white : COLORS.text);
+  // The list of everything (two columns if it's long). The one it landed on is pink, and
+  // vetoed ones are crossed out with who vetoed them.
+  const all = part.wheel;
+  const vetoes = vetoesOn(step);
+  const twoColumns = all.length > 8;
+  const rows = twoColumns ? Math.ceil(all.length / 2) : all.length;
+  const rowHeight = Math.min(18, (area.bottom - area.top - 160) / rows);
+  all.forEach((option, number) => {
     const inSecond = twoColumns && number >= rows;
     const x = column.left + (inSecond ? width / 2 : 0);
     const y = area.top + 78 + (inSecond ? number - rows : number) * rowHeight;
+    const rowWidth = twoColumns ? width / 2 : width;
+    const veto = vetoes.find(other => other.name === option);
+    // While picking one to veto: each one you can veto is a button (pink when the mouse is on it).
+    if (vetoing && !veto) {
+      const id = `veto:${option}`;
+      if (state.hoverId === id) {
+        ctx.fillStyle = "rgba(240, 122, 156, 0.3)";
+        ctx.fillRect(x - 3, y - rowHeight / 2, rowWidth, rowHeight);
+      }
+      hitBoxes.push({ left: x - 3, top: y - rowHeight / 2, right: x - 3 + rowWidth, bottom: y + rowHeight / 2,
+                      id, onClick: () => vetoChoice(option) });
+    }
     const isIt = landedOn && option === landedOn;
-    const color = isIt ? COLORS.heart : textColor;
+    const color = veto ? "#8A7A92" : isIt ? COLORS.heart : textColor;
     let words = option;
     ctx.font = FONTS.note;
-    const room = (twoColumns ? width / 2 : width) - 18;
+    const room = rowWidth - 18 - (veto ? 46 : 0);
     while (words.length > 1 && ctx.measureText(words).width > room) words = words.slice(0, -1);
     if (words !== option) words = `${words.trim()}…`;
     // Its little photo (or a little bullet, if it doesn't have one).
     const photo = choicePhoto(option);
-    if (photo) {
+    if (photo && !veto) {
       drawPhotoSquare(photo, x + 4, y, Math.min(14, rowHeight - 2));
     } else {
       ctx.fillStyle = color;
       ctx.fillRect(x + 2, y - 2, 4, 4);
     }
     write(words, x + 14, y, FONTS.note, color, "left");
+    if (veto) {
+      // Crossed out, with "nope! (Jacob)" after it.
+      const wordsWidth = ctx.measureText(words).width;
+      ctx.fillStyle = color;
+      ctx.fillRect(x + 12, y, wordsWidth + 4, 1.5);
+      write(`nope! (${veto.who})`, x + 20 + wordsWidth, y, FONTS.tag, COLORS.heart, "left");
+    }
   });
 
   const bottomY = area.bottom - 30;
   if (landedOn) {
     write(`It's ${landedOn}!`, columnMiddle, bottomY, fontThatFits(`It's ${landedOn}!`, width), isMovie ? COLORS.white : COLORS.heart);
+  } else if (vetoing) {
+    drawButton(columnMiddle, bottomY, 150, 32, "Cancel", COLORS.cream, COLORS.text, startVetoing);
   } else if (!wheelSpin) {
+    // "Spin!", with "Veto one" above it (if you still have your veto).
     drawButton(columnMiddle, bottomY, 150, 32, "Spin!", COLORS.acceptFill, COLORS.acceptText, spinWheel);
+    if (canVeto(part, step)) drawButton(columnMiddle, bottomY - 38, 150, 28, "Veto one", COLORS.cream, COLORS.text, startVetoing);
   }
 }
 
@@ -8882,7 +9037,10 @@ datePlanForm.addEventListener("submit", async event => {
     await database.collection("datenight").doc("plan").set({
       step: 0,
       picks: { activities: JSON.stringify(activities), games: games.join("\n"), movies: movies.join("\n"),
-               photos: JSON.stringify(photos) },
+               photos: JSON.stringify(photos),
+               // (keep the invite's start window, from Plan a date)
+               rangeFor: (state.datePlan && state.datePlan.rangeFor) || "",
+               rangeMinutes: (state.datePlan && state.datePlan.rangeMinutes) || "" },
       by: ME,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
